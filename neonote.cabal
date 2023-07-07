@@ -1,0 +1,95 @@
+cabal-version:      3.0
+name:               neonote
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             Simre1
+maintainer:         simre4775@gmail.com
+-- copyright:
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common common
+    ghc-options: -Wall -threaded
+    default-language: GHC2021
+    default-extensions:
+        OverloadedLabels
+        OverloadedStrings
+        TypeFamilies
+        LambdaCase
+        DuplicateRecordFields
+        NoFieldSelectors
+        DataKinds
+        TemplateHaskell
+        QuasiQuotes
+
+library
+    import:           common
+    exposed-modules:  
+        Data.List.SafeIndex
+    
+        NeoNote.Data.Note
+        NeoNote.Data.Id
+        NeoNote.Store.Database
+        NeoNote.Store.Database.Error
+        NeoNote.Store.Files
+        NeoNote.Run
+        NeoNote.Configuration
+        NeoNote.Actions
+        NeoNote.UI.ParseArguments
+        NeoNote.UI.Editor
+        NeoNote.UI.Search
+        NeoNote.UI
+        NeoNote.Time
+        NeoNote.Log
+        NeoNote.Error
+    -- other-modules:
+    -- other-extensions:
+    build-depends:    
+        base ^>=4.17.0.0,
+        optics-core,
+        optics-extra,
+        containers,
+        vector,
+        bytestring,
+        text,
+        time,
+        random,
+        sqlite-simple,
+        directory,
+        filepath,
+        effectful,
+        effectful-th,
+        string-interpolate,
+        optparse-applicative,
+        typed-process,
+        fuzzy,
+        brick,
+        vty
+        
+    hs-source-dirs:   src
+
+executable neonote
+    import:           common
+    main-is:          Main.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        base ^>=4.17.0.0,
+        neonote
+
+    hs-source-dirs:   app
+
+test-suite neonote-test
+    import:           common
+    -- other-modules:
+    -- other-extensions:
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.17.0.0,
+        neonote
