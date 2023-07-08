@@ -1,4 +1,5 @@
 module NeoNote.Error where
+
 import Control.Exception (SomeException)
 import Effectful
 import Effectful.Error.Dynamic
@@ -7,6 +8,7 @@ import NeoNote.Store.Database.Error
 data NeoNoteError = 
   EditingCrashed SomeException |
   SearchUICrashed SomeException |
+  FileAccessFailed SomeException |
   DatabaseError DatabaseError CallStack deriving (Show)
 
 runDatabaseError :: (Error NeoNoteError :> es) => Eff (Error DatabaseError : es) a -> Eff es a

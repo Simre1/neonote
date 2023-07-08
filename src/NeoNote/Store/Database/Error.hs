@@ -1,5 +1,5 @@
 module NeoNote.Store.Database.Error where
-import NeoNote.Data.Note
+import NeoNote.Note.Note
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Control.Exception (SomeException)

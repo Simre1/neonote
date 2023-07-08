@@ -5,7 +5,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Text.IO qualified as T (readFile, writeFile)
 import Effectful
 import NeoNote.Configuration
-import NeoNote.Data.Note
+import NeoNote.Note.Note
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath (joinPath)
 import System.Process.Typed

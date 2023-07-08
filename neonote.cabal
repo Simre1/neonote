@@ -31,7 +31,8 @@ library
     exposed-modules:  
         Data.List.SafeIndex
     
-        NeoNote.Data.Note
+        NeoNote.Note.Note
+        NeoNote.Note.Parse
         NeoNote.Data.Id
         NeoNote.Store.Database
         NeoNote.Store.Database.Error
@@ -68,7 +69,9 @@ library
         typed-process,
         fuzzy,
         brick,
-        vty
+        vty,
+        regex-tdfa,
+        megaparsec
         
     hs-source-dirs:   src
 

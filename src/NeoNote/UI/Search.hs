@@ -15,7 +15,7 @@ import Data.Text qualified as T
 import Effectful
 import GHC.Generics
 import Graphics.Vty qualified as Vty
-import NeoNote.Data.Note
+import NeoNote.Note.Note
 import NeoNote.Store.Database
 import NeoNote.Store.Files
 import Optics.Core
@@ -26,10 +26,10 @@ import NeoNote.Log
 import Effectful.Error.Dynamic
 import NeoNote.Error
 
-fuzzySearch :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => Text -> Eff es (Maybe NoteId)
-fuzzySearch initialText = do
+fuzzySearch :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteId)
+fuzzySearch noteFilter initialText = do
   
-  noteIds <- findNotes EveryNote
+  noteIds <- findNotes noteFilter
   noteInfos <- traverse getNoteInfo noteIds
   noteContents <- zipWithM readNote noteIds noteInfos
 
@@ -71,7 +71,8 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
     makeInitialState :: IO UIState
     makeInitialState = do
       filteredNotes <- searchNotes initialSearchTerm
-      pure $ UIState filteredNotes 0 Nothing (E.editorText "editor" Nothing initialSearchTerm) Nothing
+      noteContent <- liftIO $ traverse (getNoteContent . fst) $ filteredNotes !? 0
+      pure $ UIState filteredNotes 0 noteContent (E.editorText "editor" Nothing initialSearchTerm) Nothing
 
     drawUI :: UIState -> T.Widget Text
     drawUI st =
@@ -114,7 +115,7 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
         searchTerm <- T.strip . T.unlines . E.getEditContents . view #searchTerm <$> get
         filteredNotes <- liftIO $ searchNotes searchTerm
         modify $ #filteredNotes .~ filteredNotes
-        modify $ #position %~ min (length filteredNotes - 1)
+        modify $ #position %~ max 0 . min (length filteredNotes - 1)
         updatePreview
       where
         updatePreview :: EventM Text UIState ()

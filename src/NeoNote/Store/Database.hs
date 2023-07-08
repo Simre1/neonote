@@ -11,8 +11,8 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
-import NeoNote.Data.Note
 import NeoNote.Error
+import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
 import NeoNote.Store.Files
 import NeoNote.Time (timeFromString, timeToString)
@@ -30,22 +30,19 @@ runDatabase :: forall es a es'. (es' ~ Error DatabaseError : es, IOE :> es, File
 runDatabase eff = do
   dbPath <- getDatabasePath
   withRunInIO $ \unlift ->
-    catch
-      ( DB.withConnection dbPath $ \connection -> do
-          mapM_ (DB.execute_ connection) tables
-          maybeTableVersionError <- checkTableVersion connection
-          unlift $ runDatabaseError $ do
-            maybe (pure ()) throwError maybeTableVersionError
-            interpret
-              ( \_ databaseEffect -> case databaseEffect of
-                  NoteExists noteId -> handleNoteExists connection noteId
-                  WriteNoteInfo noteId noteInfo -> handleWriteNoteInfo connection noteId noteInfo
-                  GetNoteInfo noteId -> handleGetNoteInfo connection noteId
-                  FindNotes notesFilter -> handleFindNotes connection notesFilter
-              )
-              (inject eff)
-      )
-      $ \e -> unlift $ runDatabaseError $ throwError $ SQLiteDBCrashed e
+    DB.withConnection dbPath $ \connection -> do
+      mapM_ (DB.execute_ connection) tables
+      maybeTableVersionError <- checkTableVersion connection
+      unlift $ runDatabaseError $ do
+        maybe (pure ()) throwError maybeTableVersionError
+        interpret
+          ( \_ databaseEffect -> case databaseEffect of
+              NoteExists noteId -> handleNoteExists connection noteId
+              WriteNoteInfo noteId noteInfo -> handleWriteNoteInfo connection noteId noteInfo
+              GetNoteInfo noteId -> handleGetNoteInfo connection noteId
+              FindNotes notesFilter -> handleFindNotes connection notesFilter
+          )
+          (inject eff)
   where
     noteFilterToCondition :: NoteFilter -> (Text, [DB.NamedParam])
     noteFilterToCondition (HasTag tag) =

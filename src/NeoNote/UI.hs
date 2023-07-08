@@ -4,7 +4,7 @@ import Effectful
 import NeoNote.Actions (Action)
 import NeoNote.UI.Editor (runEditor)
 import NeoNote.UI.ParseArguments (parseActionFromArguments)
-import NeoNote.Data.Note
+import NeoNote.Note.Note
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
 import Effectful.Dispatch.Dynamic
@@ -19,7 +19,7 @@ import Effectful.Error.Dynamic (Error)
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
   Editor :: NoteId -> NoteInfo -> NoteContent -> UI m NoteContent
-  Search :: Text -> UI m (Maybe NoteId)
+  Search :: NoteFilter -> Text -> UI m (Maybe NoteId)
 
 makeEffect ''UI
 
@@ -28,5 +28,5 @@ runUI = interpret $ \_ uiEffect -> do
   case uiEffect of
     Editor noteId noteInfo noteContent -> runEditor noteId noteInfo noteContent
     GetActionFromArguments -> liftIO parseActionFromArguments
-    Search searchTerm -> fuzzySearch searchTerm
+    Search noteFilter searchTerm -> fuzzySearch noteFilter searchTerm
       

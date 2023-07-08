@@ -1,13 +1,16 @@
 module NeoNote.Store.Files where
 
+import Control.Exception (catch)
 import Data.Coerce (coerce)
 import Data.Text (Text, unpack)
 import Data.Text.IO qualified as T
 import Effectful
 import Effectful.Dispatch.Dynamic
+import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
-import NeoNote.Data.Note
+import NeoNote.Note.Note
+import NeoNote.Error
 import Optics.Core
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath (joinPath)
@@ -19,19 +22,20 @@ data Files :: Effect where
 
 makeEffect ''Files
 
-runFiles :: (IOE :> es, GetConfiguration :> es) => Eff (Files : es) a -> Eff es a
+runFiles :: (IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => Eff (Files : es) a -> Eff es a
 runFiles = interpret $ \_ filesEffect -> do
   notesPath <- getConfiguration #notesPath
-  case filesEffect of
-    GetDatabasePath -> liftIO $ do
-      createDirectoryIfMissing True notesPath
-      pure $ databasePath notesPath
-    WriteNote noteId noteInfo noteContent ->
-      liftIO $
-        handleWriteNote notesPath noteId noteContent (noteInfo ^. #extension)
-    ReadNote noteId noteInfo ->
-      liftIO $
-        handleReadNote notesPath noteId (noteInfo ^. #extension)
+  withRunInIO $ \unlift -> catch
+    ( case filesEffect of
+        GetDatabasePath -> do
+          createDirectoryIfMissing True notesPath
+          pure $ databasePath notesPath
+        WriteNote noteId noteInfo noteContent ->
+          handleWriteNote notesPath noteId noteContent (noteInfo ^. #extension)
+        ReadNote noteId noteInfo ->
+          handleReadNote notesPath noteId (noteInfo ^. #extension)
+    )
+    $ \e -> unlift $ throwError (FileAccessFailed e)
 
 notesDirectory :: FilePath -> FilePath
 notesDirectory notesPath = joinPath [notesPath, "notes"]

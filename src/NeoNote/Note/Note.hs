@@ -1,13 +1,13 @@
-module NeoNote.Data.Note where
+module NeoNote.Note.Note where
 
+import Data.Coerce (coerce)
 import Data.Set qualified as S
+import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
 import NeoNote.Time
-import Data.Text (Text)
-import qualified Data.Text as T
 import Optics.Core ((^.))
-import Data.Coerce (coerce)
 
 newtype NoteId = NoteId Id deriving (Generic, Show, Eq, Ord)
 
@@ -23,6 +23,7 @@ data NoteFilter
   | And NoteFilter NoteFilter
   | Or NoteFilter NoteFilter
   | EveryNote
+  deriving (Show, Eq, Ord, Generic)
 
 newtype Tag = Tag Text deriving (Generic, Show, Eq, Ord)
 
@@ -37,8 +38,10 @@ data NoteInfo = NoteInfo
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
 
 hasContent :: NoteContent -> Bool
-hasContent (NoteContent content) =  not $
-  T.null (T.strip content)
+hasContent (NoteContent content) =
+  not $
+    T.null (T.strip content)
 
 noteFileName :: NoteId -> NoteInfo -> Text
 noteFileName noteId noteInfo = coerce noteId <> "." <> noteInfo ^. #extension
+
