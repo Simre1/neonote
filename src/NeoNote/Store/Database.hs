@@ -1,6 +1,5 @@
 module NeoNote.Store.Database where
 
-import Control.Exception (catch)
 import Control.Monad (forM, forM_, when)
 import Data.Coerce
 import Data.Set qualified as S
@@ -162,10 +161,10 @@ runDatabase eff = do
 
     checkTableVersion :: DB.Connection -> IO (Maybe DatabaseError)
     checkTableVersion connection = DB.withTransaction connection $ do
-      versionResults <- DB.query_ connection [__i| select tableVersion from versions |]
+      versionResults <- DB.query_ connection [__i| select tableVersion from config|]
       case versionResults of
         [] -> do
-          DB.execute_ connection [__i| insert into versions (tableVersion ) values (#{currentVersion})|]
+          DB.execute_ connection [__i| insert into config (tableVersion) values (#{currentVersion})|]
           pure Nothing
         [DB.Only tableVersion] ->
           if tableVersion == currentVersion
@@ -177,7 +176,7 @@ runDatabase eff = do
         currentVersion = 1
 
 tables :: [DB.Query]
-tables = [noteTable, tagTable, versionTable]
+tables = [noteTable, tagTable, configTable]
   where
     noteTable :: DB.Query
     noteTable =
@@ -197,9 +196,9 @@ tables = [noteTable, tagTable, versionTable]
           tag TEXT NOT NULL
           )
       |]
-    versionTable :: DB.Query
-    versionTable =
+    configTable :: DB.Query
+    configTable =
       [__i|
-        CREATE TABLE IF NOT EXISTS versions
+        CREATE TABLE IF NOT EXISTS config
           (tableVersion integer NOT NULL)
       |]

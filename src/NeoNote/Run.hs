@@ -59,9 +59,11 @@ searchNote noteFilter = do
     Just noteId -> do
       noteInfo <- getNoteInfo noteId
       noteContent <- readNote noteId noteInfo
+      
       newNoteContent <- editor noteId noteInfo noteContent
       updatedNoteInfo <- updateNoteInfo newNoteContent noteInfo
-      writeNote noteId updatedNoteInfo newNoteContent
+      
+      saveNote noteId updatedNoteInfo newNoteContent
     _ -> pure ()
 
 updateNoteInfo :: GetTime :> es => NoteContent -> NoteInfo -> Eff es NoteInfo
