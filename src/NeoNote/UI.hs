@@ -15,6 +15,7 @@ import NeoNote.Store.Database (Database)
 import NeoNote.Log
 import NeoNote.Error (NeoNoteError)
 import Effectful.Error.Dynamic (Error)
+import NeoNote.Time
 
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
@@ -23,10 +24,10 @@ data UI :: Effect where
 
 makeEffect ''UI
 
-runUI :: (IOE :> es, Database :> es, Error NeoNoteError :> es, Log :> es, Files :> es, GetConfiguration :> es) => Eff (UI : es) a -> Eff es a
+runUI :: (IOE :> es, Database :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, Files :> es, GetConfiguration :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ uiEffect -> do
   case uiEffect of
     Editor noteId noteInfo noteContent -> runEditor noteId noteInfo noteContent
-    GetActionFromArguments -> liftIO parseActionFromArguments
+    GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
     Search noteFilter searchTerm -> fuzzySearch noteFilter searchTerm
       

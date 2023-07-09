@@ -7,12 +7,13 @@ import NeoNote.Actions
 import NeoNote.Note.Note
 import Options.Applicative hiding (action)
 import NeoNote.Note.Parse (parseNoteFilter)
+import NeoNote.Time
 
-parseActionFromArguments :: IO Action
-parseActionFromArguments = execParser action
+parseActionFromArguments :: Time -> IO Action
+parseActionFromArguments time = execParser (action time)
 
-action :: ParserInfo Action
-action = info (subparser createAction <|> subparser searchAction) (progDesc "Manage your notes with NeoNote")
+action :: Time -> ParserInfo Action
+action time = info (subparser createAction <|> subparser (searchAction time)) (progDesc "Manage your notes with NeoNote")
 
 createAction :: Mod CommandFields Action
 createAction =
@@ -21,18 +22,18 @@ createAction =
       (pure CreateNote)
       (progDesc "Create a new note")
 
-searchAction :: Mod CommandFields Action
-searchAction =
+searchAction :: Time -> Mod CommandFields Action
+searchAction time =
   command "search" $
     info
-      (SearchNote <$> noteFilter)
+      (SearchNote <$> noteFilter time)
       (progDesc "Search notes")
 
-noteFilter :: Parser NoteFilter
-noteFilter = do
+noteFilter :: Time -> Parser NoteFilter
+noteFilter time = do
   option
     ( do
         filterString <- str
-        either (fail . unpack) pure $ parseNoteFilter filterString
+        either (fail . unpack) pure $ parseNoteFilter time filterString
     )
     (long "filter" <> short 'f' <> value EveryNote)

@@ -17,8 +17,17 @@ noteIdToText (NoteId uuid) = idToText uuid
 noteIdFromText :: Text -> Maybe NoteId
 noteIdFromText text = NoteId <$> parseId text
 
+data DateLiteral
+  = NoteCreated
+  | NoteModified
+  | DateLiteral IncompleteTime
+  deriving (Show, Eq, Ord, Generic)
+
 data NoteFilter
   = HasTag Tag
+  | EqualDate DateLiteral DateLiteral
+  | AfterDate DateLiteral DateLiteral
+  | BeforeDate DateLiteral DateLiteral
   | Not NoteFilter
   | And NoteFilter NoteFilter
   | Or NoteFilter NoteFilter
@@ -44,4 +53,3 @@ hasContent (NoteContent content) =
 
 noteFileName :: NoteId -> NoteInfo -> Text
 noteFileName noteId noteInfo = coerce noteId <> "." <> noteInfo ^. #extension
-

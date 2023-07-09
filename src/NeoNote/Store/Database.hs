@@ -2,9 +2,11 @@ module NeoNote.Store.Database where
 
 import Control.Monad (forM, forM_, when)
 import Data.Coerce
+import Data.List (intersperse)
+import Data.Maybe (mapMaybe)
 import Data.Set qualified as S
 import Data.String.Interpolate (__i)
-import Data.Text as T (Text, null)
+import Data.Text as T (Text, null, pack)
 import Database.SQLite.Simple qualified as DB
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
@@ -14,8 +16,9 @@ import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
 import NeoNote.Store.Files
-import NeoNote.Time (timeFromString, timeToString)
+import NeoNote.Time (timeFromString, timeToString, IncompleteTime(..))
 import Optics.Core
+import Data.Bifunctor (bimap)
 
 data Database :: Effect where
   GetNoteInfo :: NoteId -> Database m NoteInfo
@@ -44,11 +47,17 @@ runDatabase eff = do
           (inject eff)
   where
     noteFilterToCondition :: NoteFilter -> (Text, [DB.NamedParam])
+
     noteFilterToCondition (HasTag tag) =
       let tagText = coerce @_ @Text tag
        in ( [__i| (exists ( select noteId, tag from tags where id = noteId and tag = :::::::#{tagText})) |],
             [":::::::" <> tagText DB.:= tagText]
           )
+    --
+    noteFilterToCondition (EqualDate d1 d2) = (dateLiteralToCondition "=" d1 d2, [])
+    noteFilterToCondition (AfterDate d1 d2) = (dateLiteralToCondition ">" d1 d2, [])
+    noteFilterToCondition (BeforeDate d1 d2) = (dateLiteralToCondition "<" d1 d2, [])
+    --
     noteFilterToCondition (And filter1 filter2) =
       let (condition1, params1) = noteFilterToCondition filter1
           (condition2, params2) = noteFilterToCondition filter2
@@ -61,6 +70,21 @@ runDatabase eff = do
       let (condition1, params1) = noteFilterToCondition filter1
        in ([__i| (not #{condition1}) |], params1)
     noteFilterToCondition EveryNote = ("1=1", [])
+    dateLiteralToCondition :: Text -> DateLiteral -> DateLiteral -> Text
+    dateLiteralToCondition operation d1 d2 =
+      let sqlConcat atoms = mconcat $ intersperse " || " atoms
+          (c1, c2) = bimap sqlConcat sqlConcat $ unzip $ mapMaybe (\tp -> (,) <$> makeTimePartCondition tp d1 <*> makeTimePartCondition tp d2) timeParts
+      in if not (T.null c1)
+        then c1 <> operation <> c2
+        else "1=1"
+      where
+        makeTimePartCondition :: (Lens' IncompleteTime (Maybe Int), Text) -> DateLiteral -> Maybe Text
+        makeTimePartCondition (timePartLens, timePartFormat) dateLiteral = case dateLiteral of
+          NoteCreated -> Just [__i| ltrim(strftime('#{timePartFormat}', createdAt), '0')|]
+          NoteModified -> Just [__i|ltrim(strftime('#{timePartFormat}', modifiedAt), '0')|]
+          DateLiteral incompleteTime -> (\a -> "'" <> a <> "'") . pack . show <$> incompleteTime ^. timePartLens
+        timeParts :: [(Lens' IncompleteTime (Maybe Int), Text)]
+        timeParts = [(#year, "%Y"), (#month, "%m"), (#day, "%d"), (#hour, "%H"), (#minute, "%M"), (#seconds, "%S")]
 
     handleNoteExists :: DB.Connection -> NoteId -> Eff es' Bool
     handleNoteExists connection noteId = do

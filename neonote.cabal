@@ -71,7 +71,8 @@ library
         brick,
         vty,
         regex-tdfa,
-        megaparsec
+        megaparsec,
+        these
         
     hs-source-dirs:   src
 
