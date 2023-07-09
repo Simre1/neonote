@@ -1,0 +1,4 @@
+packages: neonote.cabal
+
+allow-newer: base
+

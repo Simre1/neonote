@@ -1,6 +1,7 @@
 module NeoNote.Store.Database where
 
 import Control.Monad (forM, forM_, when)
+import Data.Bifunctor (bimap)
 import Data.Coerce
 import Data.List (intersperse)
 import Data.Maybe (mapMaybe)
@@ -16,15 +17,15 @@ import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
 import NeoNote.Store.Files
-import NeoNote.Time (timeFromString, timeToString, IncompleteTime(..))
+import NeoNote.Time (IncompleteTime (..), timeFromString, timeToString)
 import Optics.Core
-import Data.Bifunctor (bimap)
 
 data Database :: Effect where
   GetNoteInfo :: NoteId -> Database m NoteInfo
   WriteNoteInfo :: NoteId -> NoteInfo -> Database m ()
   FindNotes :: NoteFilter -> Database m [NoteId]
   NoteExists :: NoteId -> Database m Bool
+  DBDeleteNote :: NoteId -> Database m ()
 
 makeEffect ''Database
 
@@ -43,11 +44,11 @@ runDatabase eff = do
               WriteNoteInfo noteId noteInfo -> handleWriteNoteInfo connection noteId noteInfo
               GetNoteInfo noteId -> handleGetNoteInfo connection noteId
               FindNotes notesFilter -> handleFindNotes connection notesFilter
+              DBDeleteNote noteId -> handleDBDeleteNote connection noteId
           )
           (inject eff)
   where
     noteFilterToCondition :: NoteFilter -> (Text, [DB.NamedParam])
-
     noteFilterToCondition (HasTag tag) =
       let tagText = coerce @_ @Text tag
        in ( [__i| (exists ( select noteId, tag from tags where id = noteId and tag = :::::::#{tagText})) |],
@@ -74,14 +75,14 @@ runDatabase eff = do
     dateLiteralToCondition operation d1 d2 =
       let sqlConcat atoms = mconcat $ intersperse " || " atoms
           (c1, c2) = bimap sqlConcat sqlConcat $ unzip $ mapMaybe (\tp -> (,) <$> makeTimePartCondition tp d1 <*> makeTimePartCondition tp d2) timeParts
-      in if not (T.null c1)
-        then c1 <> operation <> c2
-        else "1=1"
+       in if not (T.null c1)
+            then c1 <> operation <> c2
+            else "1=1"
       where
         makeTimePartCondition :: (Lens' IncompleteTime (Maybe Int), Text) -> DateLiteral -> Maybe Text
         makeTimePartCondition (timePartLens, timePartFormat) dateLiteral = case dateLiteral of
-          NoteCreated -> Just [__i| ltrim(strftime('#{timePartFormat}', createdAt), '0')|]
-          NoteModified -> Just [__i|ltrim(strftime('#{timePartFormat}', modifiedAt), '0')|]
+          DateLiteralCreated -> Just [__i| ltrim(strftime('#{timePartFormat}', created), '0')|]
+          DateLiteralModified -> Just [__i|ltrim(strftime('#{timePartFormat}', modified), '0')|]
           DateLiteral incompleteTime -> (\a -> "'" <> a <> "'") . pack . show <$> incompleteTime ^. timePartLens
         timeParts :: [(Lens' IncompleteTime (Maybe Int), Text)]
         timeParts = [(#year, "%Y"), (#month, "%m"), (#day, "%d"), (#hour, "%H"), (#minute, "%M"), (#seconds, "%S")]
@@ -93,19 +94,37 @@ runDatabase eff = do
         throwError (TooManyResults noteId)
       pure $ length results == 1
 
+    handleDBDeleteNote :: DB.Connection -> NoteId -> Eff es' ()
+    handleDBDeleteNote connection noteId =
+      liftIO $ DB.withTransaction connection $ do
+        DB.execute
+          connection
+          [__i|  
+            delete from notes
+            where id = ?
+          |]
+          (DB.Only $ noteIdToText noteId)
+        DB.execute
+          connection
+          [__i|  
+            delete from tags
+            where noteId = ?
+          |]
+          (DB.Only $ noteIdToText noteId)
+
     handleWriteNoteInfo :: DB.Connection -> NoteId -> NoteInfo -> Eff es' ()
     handleWriteNoteInfo connection noteId noteInfo =
       liftIO $ DB.withTransaction connection $ do
         DB.execute
           connection
           [__i|  
-            insert or replace into notes (id, extension, createdAt, modifiedAt) 
+            insert or replace into notes (id, extension, created, modified) 
             values (?,?,?,?)
           |]
           ( noteIdToText noteId,
             noteInfo ^. #extension,
-            timeToString $ noteInfo ^. #createdAt,
-            timeToString $ noteInfo ^. #modifiedAt
+            timeToString $ noteInfo ^. #created,
+            timeToString $ noteInfo ^. #modified
           )
         DB.execute
           connection
@@ -130,8 +149,8 @@ runDatabase eff = do
           DB.query
             connection
             [__i|
-              select extension, createdAt, modifiedAt from
-                (select id, extension, createdAt, modifiedAt from notes
+              select extension, created, modified from
+                (select id, extension, created, modified from notes
                 where id = ?)
             |]
             (DB.Only $ noteIdToText noteId)
@@ -147,18 +166,18 @@ runDatabase eff = do
             (DB.Only $ noteIdToText noteId)
       case resultsNotes of
         [] -> throwError (MissingNoteId noteId)
-        [(extension, createdAtText, modifiedAtText)] -> do
-          createdAt <-
-            maybe (throwError $ InvalidDateFormat noteId createdAtText) pure $
-              timeFromString createdAtText
-          modifiedAt <-
-            maybe (throwError $ InvalidDateFormat noteId modifiedAtText) pure $
-              timeFromString modifiedAtText
+        [(extension, createdText, modifiedText)] -> do
+          created <-
+            maybe (throwError $ InvalidDateFormat noteId createdText) pure $
+              timeFromString createdText
+          modified <-
+            maybe (throwError $ InvalidDateFormat noteId modifiedText) pure $
+              timeFromString modifiedText
           pure $
             NoteInfo
               { tags = S.fromList $ Tag . (\(DB.Only tagText) -> tagText) <$> resultsTags,
-                createdAt = createdAt,
-                modifiedAt = modifiedAt,
+                created = created,
+                modified = modified,
                 extension = extension
               }
         _ -> throwError (TooManyResults noteId)
@@ -176,7 +195,7 @@ runDatabase eff = do
             connection
             [__i|
               select id from 
-                (select id, createdAt, modifiedAt from notes
+                (select id, created, modified from notes
                 #{conditionSQL})
             |]
             params
@@ -208,8 +227,8 @@ tables = [noteTable, tagTable, configTable]
         CREATE TABLE IF NOT EXISTS notes 
           (id TEXT PRIMARY KEY NOT NULL,
           extension TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          modifiedAt TEXT NOT NULL
+          created TEXT NOT NULL,
+          modified TEXT NOT NULL
           )
       |]
     tagTable :: DB.Query

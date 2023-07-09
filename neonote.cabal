@@ -15,6 +15,7 @@ extra-doc-files:    CHANGELOG.md
 common common
     ghc-options: -Wall -threaded
     default-language: GHC2021
+    ghc-options: -O2
     default-extensions:
         OverloadedLabels
         OverloadedStrings
@@ -30,7 +31,8 @@ library
     import:           common
     exposed-modules:  
         Data.List.SafeIndex
-    
+
+        NeoNote.Search
         NeoNote.Note.Note
         NeoNote.Note.Parse
         NeoNote.Data.Id
@@ -42,11 +44,15 @@ library
         NeoNote.Actions
         NeoNote.UI.ParseArguments
         NeoNote.UI.Editor
-        NeoNote.UI.Search
+        NeoNote.UI.Picker
+        NeoNote.UI.Prompt
+        NeoNote.UI.DisplayNotes
+        NeoNote.UI.DisplayNote
         NeoNote.UI
         NeoNote.Time
         NeoNote.Log
         NeoNote.Error
+        Paths_neonote    
     -- other-modules:
     -- other-extensions:
     build-depends:    
@@ -72,7 +78,8 @@ library
         vty,
         regex-tdfa,
         megaparsec,
-        these
+        table-layout,
+        data-default
         
     hs-source-dirs:   src
 

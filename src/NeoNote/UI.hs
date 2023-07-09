@@ -1,26 +1,32 @@
 module NeoNote.UI where
 
+import Data.Text
 import Effectful
-import NeoNote.Actions (Action)
+import Effectful.Dispatch.Dynamic
+import Effectful.Error.Dynamic (Error)
+import Effectful.TH (makeEffect)
+import NeoNote.Actions (Action, OrderBy)
+import NeoNote.Configuration
+import NeoNote.Error (NeoNoteError)
+import NeoNote.Log
+import NeoNote.Note.Note
+import NeoNote.Store.Database (Database)
+import NeoNote.Store.Files (Files)
+import NeoNote.Time
 import NeoNote.UI.Editor (runEditor)
 import NeoNote.UI.ParseArguments (parseActionFromArguments)
-import NeoNote.Note.Note
-import Effectful.TH (makeEffect)
-import NeoNote.Configuration
-import Effectful.Dispatch.Dynamic
-import Data.Text
-import NeoNote.UI.Search (fuzzySearch)
-import NeoNote.Store.Files (Files)
-import NeoNote.Store.Database (Database)
-import NeoNote.Log
-import NeoNote.Error (NeoNoteError)
-import Effectful.Error.Dynamic (Error)
-import NeoNote.Time
+import NeoNote.UI.Picker (picker)
+import NeoNote.UI.Prompt
+import NeoNote.UI.DisplayNotes
+import NeoNote.UI.DisplayNote (displayNoteInTerminal)
 
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
   Editor :: NoteId -> NoteInfo -> NoteContent -> UI m NoteContent
-  Search :: NoteFilter -> Text -> UI m (Maybe NoteId)
+  Pick :: NoteFilter -> Text -> UI m (Maybe NoteId)
+  Prompt :: Prompt a -> UI m a
+  DisplayNotes :: OrderBy NoteAttribute -> Int -> [NoteAttribute] -> [(NoteId, NoteInfo)] -> UI m ()
+  DisplayNote :: NoteId -> NoteInfo -> NoteContent -> UI m ()
 
 makeEffect ''UI
 
@@ -29,5 +35,7 @@ runUI = interpret $ \_ uiEffect -> do
   case uiEffect of
     Editor noteId noteInfo noteContent -> runEditor noteId noteInfo noteContent
     GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
-    Search noteFilter searchTerm -> fuzzySearch noteFilter searchTerm
-      
+    Pick noteFilter searchTerm -> picker noteFilter searchTerm
+    Prompt promptType -> askPrompt promptType
+    DisplayNotes orderBy displayAmount noteAttributes notes -> displayNotesInTerminal orderBy displayAmount noteAttributes notes
+    DisplayNote noteId noteInfo noteContent -> displayNoteInTerminal noteId noteInfo noteContent

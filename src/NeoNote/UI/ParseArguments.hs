@@ -2,32 +2,115 @@
 
 module NeoNote.UI.ParseArguments where
 
-import Data.Text (unpack)
+import Control.Monad (guard)
+import Data.Text (Text, unpack)
+import Data.Version (showVersion)
 import NeoNote.Actions
 import NeoNote.Note.Note
-import Options.Applicative hiding (action)
 import NeoNote.Note.Parse (parseNoteFilter)
 import NeoNote.Time
+import Options.Applicative hiding (action)
+import Paths_neonote qualified as P (version)
 
 parseActionFromArguments :: Time -> IO Action
-parseActionFromArguments time = execParser (action time)
+parseActionFromArguments time = execParser (cliParser time)
 
-action :: Time -> ParserInfo Action
-action time = info (subparser createAction <|> subparser (searchAction time)) (progDesc "Manage your notes with NeoNote")
+cliParser :: Time -> ParserInfo Action
+cliParser time =
+  info
+    (helper <*> version <*> programActions time)
+    (progDesc "Manage your notes with NeoNote")
+
+version :: Parser (a -> a)
+version = infoOption (showVersion P.version) (short 'v' <> long "version" <> help "Show version")
+
+programActions :: Time -> Parser Action
+programActions time =
+  subparser createAction
+    <|> hsubparser (editAction time)
+    <|> hsubparser (viewAction time)
+    <|> hsubparser (deleteAction time)
+    <|> hsubparser (listAction time)
+    <|> hsubparser scanAction
 
 createAction :: Mod CommandFields Action
 createAction =
-  command "create" $
-    info
-      (pure CreateNote)
-      (progDesc "Create a new note")
+  command
+    "create"
+    ( info
+        ( CreateNote
+            <$> strArgument (value "" <> help "Text for the note")
+            <*> switch (long "skip-editor" <> short 's' <> help "Skip the editor and save the note")
+        )
+        (progDesc "Create a new note")
+    )
+    <> metavar "create"
 
-searchAction :: Time -> Mod CommandFields Action
-searchAction time =
-  command "search" $
-    info
-      (SearchNote <$> noteFilter time)
-      (progDesc "Search notes")
+editAction :: Time -> Mod CommandFields Action
+editAction time =
+  command
+    "edit"
+    ( info
+        ( EditNote
+            <$> noteFilter time
+            <*> searchText
+            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and edit the first note")
+        )
+        (progDesc "Edit a note")
+    )
+    <> metavar "edit"
+
+deleteAction :: Time -> Mod CommandFields Action
+deleteAction time =
+  command
+    "delete"
+    ( info
+        ( DeleteNote
+            <$> noteFilter time
+            <*> searchText
+            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and delete the first note")
+        )
+        (progDesc "Delete a note")
+    )
+    <> metavar "delete"
+
+viewAction :: Time -> Mod CommandFields Action
+viewAction time =
+  command
+    "view"
+    ( info
+        ( ViewNote
+            <$> noteFilter time
+            <*> searchText
+            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and view the first note")
+        )
+        (progDesc "View a note")
+    )
+    <> metavar "view"
+
+listAction :: Time -> Mod CommandFields Action
+listAction time =
+  command
+    "list"
+    ( info
+        ( ListNotes
+            <$> noteFilter time
+            <*> searchText
+            <*> many (option noteAttribute (short 'a' <> long "attribute" <> help "Note attributes which are shown (id|created|modified|extension|tags)"))
+            <*> option auto (value 20 <> long "amount" <> help "Amount of notes to list")
+            <*> ( Ascending <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
+                    <|> Descending <$> option noteAttribute (value AttributeId <> long "descending" <> help "Order notes by attribute in descending manner")
+                )
+        )
+        (progDesc "List notes")
+    )
+    <> metavar "list"
+
+scanAction :: Mod CommandFields Action
+scanAction = command "scan" (info (pure ScanNotes) (progDesc "Scan notes and update database")) <> metavar "scan"
+
+searchText :: Parser Text
+searchText = strArgument (value "" <> help "Initial search text")
 
 noteFilter :: Time -> Parser NoteFilter
 noteFilter time = do
@@ -37,3 +120,11 @@ noteFilter time = do
         either (fail . unpack) pure $ parseNoteFilter time filterString
     )
     (long "filter" <> short 'f' <> value EveryNote)
+
+noteAttribute :: ReadM NoteAttribute
+noteAttribute =
+  AttributeId <$ maybeReader (guard . (\s -> s == "id" || s == "i"))
+    <|> AttributeCreated <$ maybeReader (guard . (\s -> s == "created" || s == "c"))
+    <|> AttributeModified <$ maybeReader (guard . (\s -> s == "modified" || s == "m"))
+    <|> AttributeExtension <$ maybeReader (guard . (\s -> s == "extension" || s == "e"))
+    <|> AttributeTags <$ maybeReader (guard . (\s -> s == "tags" || s == "t"))

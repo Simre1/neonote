@@ -7,7 +7,7 @@ import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
 import NeoNote.Time
-import Optics.Core ((^.))
+import Optics.Core ((^.), Lens')
 
 newtype NoteId = NoteId Id deriving (Generic, Show, Eq, Ord)
 
@@ -18,8 +18,8 @@ noteIdFromText :: Text -> Maybe NoteId
 noteIdFromText text = NoteId <$> parseId text
 
 data DateLiteral
-  = NoteCreated
-  | NoteModified
+  = DateLiteralCreated
+  | DateLiteralModified
   | DateLiteral IncompleteTime
   deriving (Show, Eq, Ord, Generic)
 
@@ -39,12 +39,20 @@ newtype Tag = Tag Text deriving (Generic, Show, Eq, Ord)
 data NoteInfo = NoteInfo
   { tags :: S.Set Tag,
     extension :: Text,
-    createdAt :: Time,
-    modifiedAt :: Time
+    created :: Time,
+    modified :: Time
   }
   deriving (Generic, Show, Eq, Ord)
 
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
+
+data NoteAttribute
+  = AttributeId
+  | AttributeCreated
+  | AttributeModified
+  | AttributeExtension
+  | AttributeTags
+  deriving (Show, Eq, Generic, Ord)
 
 hasContent :: NoteContent -> Bool
 hasContent (NoteContent content) =
@@ -53,3 +61,14 @@ hasContent (NoteContent content) =
 
 noteFileName :: NoteId -> NoteInfo -> Text
 noteFileName noteId noteInfo = coerce noteId <> "." <> noteInfo ^. #extension
+
+orderNote :: NoteAttribute -> (NoteId, NoteInfo) -> (NoteId, NoteInfo) -> Ordering
+orderNote noteAttribute (id1, info1) (id2, info2) = case noteAttribute of
+  AttributeId -> compare id1 id2
+  AttributeCreated -> compareField #created
+  AttributeModified -> compareField #modified
+  AttributeExtension -> compareField #extension
+  AttributeTags -> compareField #tags
+  where 
+    compareField :: Ord a => Lens' NoteInfo a -> Ordering
+    compareField field = compare (info1 ^. field) (info2 ^. field)

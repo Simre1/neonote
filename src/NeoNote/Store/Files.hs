@@ -1,6 +1,6 @@
 module NeoNote.Store.Files where
 
-import Control.Exception (catch)
+import Control.Exception (catch, SomeException)
 import Data.Coerce (coerce)
 import Data.Text (Text, unpack)
 import Data.Text.IO qualified as T
@@ -12,13 +12,14 @@ import NeoNote.Configuration
 import NeoNote.Note.Note
 import NeoNote.Error
 import Optics.Core
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, removeFile)
 import System.FilePath (joinPath)
 
 data Files :: Effect where
   GetDatabasePath :: Files m FilePath
   WriteNote :: NoteId -> NoteInfo -> NoteContent -> Files m ()
   ReadNote :: NoteId -> NoteInfo -> Files m NoteContent
+  FileDeleteNote :: NoteId -> NoteInfo -> Files m ()
 
 makeEffect ''Files
 
@@ -34,6 +35,8 @@ runFiles = interpret $ \_ filesEffect -> do
           handleWriteNote notesPath noteId noteContent (noteInfo ^. #extension)
         ReadNote noteId noteInfo ->
           handleReadNote notesPath noteId (noteInfo ^. #extension)
+        FileDeleteNote noteId noteInfo ->
+          handleDeleteNote notesPath noteId (noteInfo ^. #extension)
     )
     $ \e -> unlift $ throwError (FileAccessFailed e)
 
@@ -52,4 +55,11 @@ handleWriteNote notesPath noteId noteContent extension = do
 handleReadNote :: FilePath -> NoteId -> Text -> IO NoteContent
 handleReadNote notesPath noteId extension = do
   let directory = notesDirectory notesPath
-  NoteContent <$> T.readFile (joinPath [directory, unpack $ noteIdToText noteId <> "." <> extension])
+      filePath = joinPath [directory, unpack $ noteIdToText noteId <> "." <> extension]
+  catch (NoteContent <$> T.readFile  filePath) $ 
+    \(_ :: SomeException) -> pure (NoteContent "Sorry, this file has been lost")
+
+handleDeleteNote :: FilePath -> NoteId -> Text -> IO ()
+handleDeleteNote notesPath noteId extension = do
+  let directory = notesDirectory notesPath
+  removeFile (joinPath [directory, unpack $ noteIdToText noteId <> "." <> extension]) 

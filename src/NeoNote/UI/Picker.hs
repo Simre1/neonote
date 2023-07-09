@@ -1,4 +1,4 @@
-module NeoNote.UI.Search where
+module NeoNote.UI.Picker where
 
 import Brick
 import Brick.AttrMap qualified as A
@@ -6,57 +6,37 @@ import Brick.Main qualified as M
 import Brick.Types qualified as T
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.Edit qualified as E
-import Control.Monad (zipWithM)
+import Control.Exception (catch)
 import Data.Coerce (coerce)
-import Data.Map qualified as M
+import Data.List.SafeIndex
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Effectful
+import Effectful.Error.Dynamic
 import GHC.Generics
 import Graphics.Vty qualified as Vty
+import NeoNote.Error
+import NeoNote.Log
 import NeoNote.Note.Note
+import NeoNote.Search
 import NeoNote.Store.Database
 import NeoNote.Store.Files
 import Optics.Core
-import Text.Fuzzy qualified as Fuzzy
-import Data.List.SafeIndex
-import Control.Exception (catch)
-import NeoNote.Log
-import Effectful.Error.Dynamic
-import NeoNote.Error
 
-fuzzySearch :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteId)
-fuzzySearch noteFilter initialText = do
-  
-  noteIds <- findNotes noteFilter
-  noteInfos <- traverse getNoteInfo noteIds
-  noteContents <- zipWithM readNote noteIds noteInfos
+picker :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteId)
+picker noteFilter initialText = do
+  preparedSearch <- prepareSearch noteFilter
 
-  let notes = zip (zip noteIds noteInfos) (coerce <$> noteContents)
-      noteMap = M.fromList $ zip noteIds noteContents
-      getNoteContent noteId = pure $ noteMap M.! noteId
-      searchNotes = pure . fuzzySearchNotes notes
-  
-  withRunInIO $ \unlift -> catch (searchApp getNoteContent searchNotes initialText) $ \e -> do
-    unlift $ throwError $ SearchUICrashed e
-    
+  withRunInIO $ \unlift -> do
+    let preparedSearchIO = mapPreparedSearch unlift preparedSearch
+    catch (pickerApp preparedSearchIO initialText) $ \e -> do
+      unlift $ throwError $ SearchUICrashed e
 
-fuzzySearchNotes :: [(a, NoteContent)] -> Text -> [a]
-fuzzySearchNotes notes searchTerm =
-  fst . Fuzzy.original
-    <$> Fuzzy.filter
-      searchTerm
-      notes
-      ""
-      ""
-      (coerce . snd)
-      False
-
-searchApp :: (NoteId -> IO NoteContent) -> (Text -> IO [(NoteId, NoteInfo)]) -> Text -> IO (Maybe NoteId)
-searchApp getNoteContent searchNotes initialSearchTerm = do
+pickerApp :: PreparedSearch IO -> Text -> IO (Maybe NoteId)
+pickerApp preparedSearch initialSearchTerm = do
   initialState <- makeInitialState
-  uiState <- defaultMain app initialState 
+  uiState <- defaultMain app initialState
   pure $ uiState ^. #result
   where
     app :: App UIState () Text
@@ -70,8 +50,8 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
         }
     makeInitialState :: IO UIState
     makeInitialState = do
-      filteredNotes <- searchNotes initialSearchTerm
-      noteContent <- liftIO $ traverse (getNoteContent . fst) $ filteredNotes !? 0
+      filteredNotes <- (preparedSearch ^. #searchNotes) initialSearchTerm
+      noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . fst) $ filteredNotes !? 0
       pure $ UIState filteredNotes 0 noteContent (E.editorText "editor" Nothing initialSearchTerm) Nothing
 
     drawUI :: UIState -> T.Widget Text
@@ -79,10 +59,10 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
       (notesList <+> previewNote)
         <=> searchbar
       where
-        notesList = 
+        notesList =
           padTop Max $ (<+> vBorder) $ padAll 1 $ case imap drawItem (st ^. #filteredNotes) of
             [] -> txt "No notes match your query"
-            items -> foldl1 (<=>) items 
+            items -> foldl1 (<=>) items
         drawItem i item = (if i == st ^. #position then withAttr selectedAttr else id) $ txt (uncurry noteFileName item)
         searchbar =
           hBorder
@@ -94,7 +74,6 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
     appEvent ev = case ev of
       (T.VtyEvent (Vty.EvKey Vty.KEsc [])) -> M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'c') [Vty.MCtrl])) -> M.halt
-
       (T.VtyEvent (Vty.EvKey Vty.KEnter [])) -> do
         modify $ \state ->
           state
@@ -102,29 +81,27 @@ searchApp getNoteContent searchNotes initialSearchTerm = do
               (noteId, _) <- (state ^. #filteredNotes) !? (state ^. #position)
               pure noteId
         M.halt
-      
       (T.VtyEvent (Vty.EvKey Vty.KUp [])) -> do
         modify $ #position %~ max 0 . pred
         updatePreview
       (T.VtyEvent (Vty.EvKey Vty.KDown [])) -> do
         modify $ \state -> state & #position %~ min (length (state ^. #filteredNotes) - 1) . succ
         updatePreview
-      
       _ -> do
         zoom (toLensVL #searchTerm) $ E.handleEditorEvent ev
         searchTerm <- T.strip . T.unlines . E.getEditContents . view #searchTerm <$> get
-        filteredNotes <- liftIO $ searchNotes searchTerm
+        filteredNotes <- liftIO $ (preparedSearch ^. #searchNotes) searchTerm
         modify $ #filteredNotes .~ filteredNotes
         modify $ #position %~ max 0 . min (length filteredNotes - 1)
         updatePreview
       where
         updatePreview :: EventM Text UIState ()
         updatePreview = do
-          position <- view #position <$> get 
+          position <- view #position <$> get
           filteredNotes <- view #filteredNotes <$> get
-          noteContent <- liftIO $ traverse (getNoteContent . fst) $ filteredNotes !? position
+          noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . fst) $ filteredNotes !? position
           modify $ #previewedNote .~ noteContent
-    
+
     selectedAttr :: A.AttrName
     selectedAttr = attrName "selected"
 

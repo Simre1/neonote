@@ -78,13 +78,13 @@ dateParser _ = do
     timeOfDayP :: Parser IncompleteTime
     timeOfDayP = P.try $ lexeme $ do
       timeOfDayString <- P.takeP (Just "Day") 8
-      maybe (fail "Day of time could not be parsed") pure (timeOfDayFromString timeOfDayString)
+      maybe (fail "Time of day could not be parsed") pure (timeOfDayFromString timeOfDayString)
 
     createdP :: Parser DateLiteral
-    createdP = lexeme $ NoteCreated <$ (P.string "created" <|> P.string "c")
+    createdP = lexeme $ DateLiteralCreated <$ (P.string "created" <|> P.string "c")
 
     modifiedP :: Parser DateLiteral
-    modifiedP = lexeme $ NoteModified <$ (P.string "modified" <|> P.string "m")
+    modifiedP = lexeme $ DateLiteralModified <$ (P.string "modified" <|> P.string "m")
 
 chainl1 :: P.Parsec Void Text a -> P.Parsec Void Text (a -> a -> a) -> P.Parsec Void Text a
 chainl1 p op = do
