@@ -8,30 +8,30 @@ data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
 
 data Action
   = CreateNote
-      { noteContent :: Text,
-        skipEditor :: Bool
+      { skipEditor :: Bool,
+        noteContent :: Text
       }
   | EditNote
       { noteFilter :: NoteFilter,
-        search :: Text,
-        skipPicker :: Bool
+        skipPicker :: Bool,
+        search :: Text
       }
   | DeleteNote
       { noteFilter :: NoteFilter,
-        search :: Text,
-        skipPicker :: Bool
+        skipPicker :: Bool,
+        search :: Text
       }
   | ViewNote
       { noteFilter :: NoteFilter,
-        search :: Text,
-        skipPicker :: Bool
+        skipPicker :: Bool,
+        search :: Text
       }
   | ListNotes
       { noteFilter :: NoteFilter,
-        search :: Text,
         showAttributes :: [NoteAttribute],
         showAmount :: Int,
-        orderBy :: OrderBy NoteAttribute 
+        orderBy :: OrderBy NoteAttribute,
+        search :: Text
       }
   | ScanNotes
   deriving (Generic, Show, Eq, Ord)

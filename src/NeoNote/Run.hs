@@ -3,6 +3,7 @@ module NeoNote.Run where
 import Control.Monad (when)
 import Data.List.SafeIndex
 import Data.Text (Text)
+import Debug.Trace
 import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Actions
@@ -41,11 +42,11 @@ runIO =
 
 handleAction :: Action -> Eff AppEffects ()
 handleAction action = case action of
-  CreateNote initialText skipEditor -> createNote initialText skipEditor
-  EditNote noteFilter searchText skipPicker -> editNote noteFilter searchText skipPicker
-  DeleteNote noteFilter searchText skipPicker -> deleteNote noteFilter searchText skipPicker
-  ViewNote noteFilter searchText skipPicker -> viewNote noteFilter searchText skipPicker
-  ListNotes noteFilter searchText attributesToShow showAmount orderBy ->
+  CreateNote skipEditor initialText -> createNote initialText skipEditor
+  EditNote noteFilter skipPicker searchText -> editNote noteFilter searchText skipPicker
+  DeleteNote noteFilter skipPicker searchText -> deleteNote noteFilter searchText skipPicker
+  ViewNote noteFilter skipPicker searchText -> viewNote noteFilter searchText skipPicker
+  ListNotes noteFilter attributesToShow showAmount orderBy searchText ->
     listNotes noteFilter searchText attributesToShow showAmount orderBy
   ScanNotes -> scanNotes
 
@@ -87,7 +88,7 @@ editNote noteFilter searchTerm skipPicker = do
       if hasContent newNoteContent
         then do
           updatedNoteInfo <- updateNoteInfo newNoteContent noteInfo
-          saveNote noteId updatedNoteInfo noteContent
+          saveNote noteId updatedNoteInfo newNoteContent
           logMessage NoteEdited
         else do
           logMessage NoteEmpty
@@ -125,7 +126,6 @@ viewNote noteFilter searchTerm skipPicker = do
       noteInfo <- getNoteInfo noteId
       noteContent <- readNote noteId noteInfo
       displayNote noteId noteInfo noteContent
-
     _ -> logMessage NoMatchingNote
 
 listNotes :: (UI :> es, Error NeoNoteError :> es, Database :> es, Files :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
@@ -134,9 +134,8 @@ listNotes noteFilter search noteAttributes showAmount orderBy = do
   notes <- (preparedSearch ^. #searchNotes) search
   displayNotes orderBy showAmount noteAttributes notes
 
-scanNotes :: IOE :> es => Eff es ()
+scanNotes :: (IOE :> es) => Eff es ()
 scanNotes = liftIO $ putStrLn "Sorry, not yet implemented"
-  
 
 updateNoteInfo :: (GetTime :> es) => NoteContent -> NoteInfo -> Eff es NoteInfo
 updateNoteInfo noteContent noteInfo = do
@@ -170,5 +169,5 @@ makeNoteId = do
 
 saveNote :: (Database :> es, Files :> es) => NoteId -> NoteInfo -> NoteContent -> Eff es ()
 saveNote noteId noteInfo noteContent = do
-  writeNote noteId noteInfo noteContent
+  writeNote noteId noteInfo $ traceShowId noteContent
   writeNoteInfo noteId noteInfo
