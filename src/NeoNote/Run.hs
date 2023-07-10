@@ -3,7 +3,6 @@ module NeoNote.Run where
 import Control.Monad (when)
 import Data.List.SafeIndex
 import Data.Text (Text)
-import Debug.Trace
 import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Actions
@@ -130,9 +129,7 @@ viewNote noteFilter searchTerm skipPicker = do
 
 listNotes :: (UI :> es, Error NeoNoteError :> es, Database :> es, Files :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 listNotes noteFilter search noteAttributes showAmount orderBy = do
-  preparedSearch <- prepareSearch noteFilter
-  notes <- (preparedSearch ^. #searchNotes) search
-  displayNotes orderBy showAmount noteAttributes notes
+  displayNotes noteFilter search orderBy showAmount noteAttributes
 
 scanNotes :: (IOE :> es) => Eff es ()
 scanNotes = liftIO $ putStrLn "Sorry, not yet implemented"
@@ -169,5 +166,5 @@ makeNoteId = do
 
 saveNote :: (Database :> es, Files :> es) => NoteId -> NoteInfo -> NoteContent -> Eff es ()
 saveNote noteId noteInfo noteContent = do
-  writeNote noteId noteInfo $ traceShowId noteContent
+  writeNote noteId noteInfo noteContent
   writeNoteInfo noteId noteInfo

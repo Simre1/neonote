@@ -1,13 +1,14 @@
 module NeoNote.Note.Note where
 
 import Data.Coerce (coerce)
+import Data.List (intersperse)
 import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
 import NeoNote.Time
-import Optics.Core ((^.), Lens')
+import Optics.Core (Lens', (^.))
 
 newtype NoteId = NoteId Id deriving (Generic, Show, Eq, Ord)
 
@@ -69,6 +70,13 @@ orderNote noteAttribute (id1, info1) (id2, info2) = case noteAttribute of
   AttributeModified -> compareField #modified
   AttributeExtension -> compareField #extension
   AttributeTags -> compareField #tags
-  where 
-    compareField :: Ord a => Lens' NoteInfo a -> Ordering
-    compareField field = compare (info1 ^. field) (info2 ^. field)
+  where
+    compareField :: (Ord a) => Lens' NoteInfo a -> Ordering
+    compareField field = compare (info2 ^. field) (info1 ^. field)
+
+concatTags :: S.Set Tag -> Text
+concatTags tags =
+  mconcat $
+    intersperse "," $
+      coerce
+        <$> S.toList tags

@@ -3,6 +3,7 @@ module NeoNote.UI.Editor where
 import Control.Monad (guard)
 import Data.Text (Text, pack, unpack)
 import Data.Text.IO qualified as T (readFile, writeFile)
+import Data.Text qualified as T
 import Effectful
 import NeoNote.Configuration
 import NeoNote.Note.Note
@@ -18,20 +19,26 @@ import NeoNote.Error
 
 runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NoteId -> NoteInfo -> NoteContent -> Eff es NoteContent
 runEditor noteId noteInfo oldNoteContent = do
-  editorCommand <- getConfiguration #editor
+  editorCommandTemplate <- getConfiguration #editor
   suffix <- pack . show <$> randomRIO @Int (10000, 99999)
   let fileName = suffix <> "-" <> noteFileName noteId noteInfo
-  withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommand fileName oldNoteContent) $ \e -> do
+  withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommandTemplate fileName oldNoteContent) $ \e -> do
     unlift $ throwError $ EditingCrashed e
 
+buildEditorCommand :: Text -> Text -> Text
+buildEditorCommand editorCommandTemplate notePath = 
+  if T.elem '%' editorCommandTemplate
+    then T.replace "%" notePath editorCommandTemplate
+    else editorCommandTemplate <> " " <> notePath
+
 runEditorTemporaryFile :: Text -> Text -> NoteContent -> IO NoteContent
-runEditorTemporaryFile editorCommand fileName oldNoteContent = do
-  withTemporaryFile fileName $ \filepath -> do
-    T.writeFile filepath $ coerce oldNoteContent
-    let cmd = shell $ unpack $ editorCommand <> " " <> pack filepath
+runEditorTemporaryFile editorCommandTemplate fileName oldNoteContent = do
+  withTemporaryFile fileName $ \filePath -> do
+    T.writeFile filePath $ coerce oldNoteContent
+    let cmd = shell $ unpack $ buildEditorCommand editorCommandTemplate (pack filePath)
     exitCode <- runProcess cmd
     guard $ exitCode == ExitSuccess
-    newNoteContent <- T.readFile filepath
+    newNoteContent <- T.readFile filePath
     pure $ NoteContent newNoteContent
 
 withTemporaryFile :: Text -> (FilePath -> IO a) -> IO a

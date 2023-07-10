@@ -15,7 +15,6 @@ extra-doc-files:    CHANGELOG.md
 common common
     ghc-options: -Wall -threaded
     default-language: GHC2021
-    ghc-options: -O2
     default-extensions:
         OverloadedLabels
         OverloadedStrings
@@ -79,7 +78,8 @@ library
         regex-tdfa,
         megaparsec,
         table-layout,
-        data-default
+        data-default,
+        config-ini
         
     hs-source-dirs:   src
 

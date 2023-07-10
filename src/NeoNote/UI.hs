@@ -25,7 +25,7 @@ data UI :: Effect where
   Editor :: NoteId -> NoteInfo -> NoteContent -> UI m NoteContent
   Pick :: NoteFilter -> Text -> UI m (Maybe NoteId)
   Prompt :: Prompt a -> UI m a
-  DisplayNotes :: OrderBy NoteAttribute -> Int -> [NoteAttribute] -> [(NoteId, NoteInfo)] -> UI m ()
+  DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute]  -> UI m ()
   DisplayNote :: NoteId -> NoteInfo -> NoteContent -> UI m ()
 
 makeEffect ''UI
@@ -37,5 +37,5 @@ runUI = interpret $ \_ uiEffect -> do
     GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
     Pick noteFilter searchTerm -> picker noteFilter searchTerm
     Prompt promptType -> askPrompt promptType
-    DisplayNotes orderBy displayAmount noteAttributes notes -> displayNotesInTerminal orderBy displayAmount noteAttributes notes
+    DisplayNotes noteFilter search orderBy displayAmount noteAttributes -> displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
     DisplayNote noteId noteInfo noteContent -> displayNoteInTerminal noteId noteInfo noteContent

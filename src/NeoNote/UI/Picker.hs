@@ -23,6 +23,8 @@ import NeoNote.Search
 import NeoNote.Store.Database
 import NeoNote.Store.Files
 import Optics.Core
+import NeoNote.Time (timeToString)
+import Data.String.Interpolate
 
 picker :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteId)
 picker noteFilter initialText = do
@@ -63,7 +65,9 @@ pickerApp preparedSearch initialSearchTerm = do
           padTop Max $ (<+> vBorder) $ padAll 1 $ case imap drawItem (st ^. #filteredNotes) of
             [] -> txt "No notes match your query"
             items -> foldl1 (<=>) items
-        drawItem i item = (if i == st ^. #position then withAttr selectedAttr else id) $ txt (uncurry noteFileName item)
+        drawItem i (_, noteInfo) =
+          (if i == st ^. #position then withAttr selectedAttr else id) $
+            txt [__i| #{timeToString $ noteInfo ^. #modified}\n #{T.take 30 $ concatTags $ noteInfo ^. #tags}  |]
         searchbar =
           hBorder
             <=> padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))

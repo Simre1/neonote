@@ -12,6 +12,7 @@ import Control.Monad (zipWithM)
 import Data.Map qualified as M
 import GHC.Generics (Generic)
 import Optics.Core ((^.))
+import Data.List (sortBy)
 
 data PreparedSearch f = PreparedSearch {
   getNoteContent :: NoteId -> f NoteContent,
@@ -45,7 +46,7 @@ prepareSearch noteFilter = do
   let notes = zip (zip noteIds noteInfos) (coerce <$> noteContents)
       noteMap = M.fromList $ zip noteIds noteContents
       getNoteContent noteId = pure $ noteMap M.! noteId
-      searchNotes = pure . fuzzySearchNotes notes
+      searchNotes = pure .  sortBy (orderNote AttributeModified) . fuzzySearchNotes notes
   
   pure $ PreparedSearch {
     getNoteContent = getNoteContent,

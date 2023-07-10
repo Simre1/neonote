@@ -19,7 +19,7 @@ cliParser :: Time -> ParserInfo Action
 cliParser time =
   info
     (helper <*> version <*> programActions time)
-    (progDesc "Manage your notes with NeoNote")
+    (progDesc "Manage your notes with NeoNote in your terminal")
 
 version :: Parser (a -> a)
 version = infoOption (showVersion P.version) (short 'v' <> long "version" <> help "Show version")
@@ -35,8 +35,7 @@ programActions time =
 
 createAction :: Mod CommandFields Action
 createAction =
-  command
-    "create"
+  commandWithShortcut "create"
     ( info
         ( CreateNote
             <$> switch (long "skip-editor" <> short 's' <> help "Skip the editor and save the note")
@@ -48,7 +47,7 @@ createAction =
 
 editAction :: Time -> Mod CommandFields Action
 editAction time =
-  command
+  commandWithShortcut
     "edit"
     ( info
         ( EditNote
@@ -62,7 +61,7 @@ editAction time =
 
 deleteAction :: Time -> Mod CommandFields Action
 deleteAction time =
-  command
+  commandWithShortcut
     "delete"
     ( info
         ( DeleteNote
@@ -76,7 +75,7 @@ deleteAction time =
 
 viewAction :: Time -> Mod CommandFields Action
 viewAction time =
-  command
+  commandWithShortcut
     "view"
     ( info
         ( ViewNote
@@ -90,15 +89,22 @@ viewAction time =
 
 listAction :: Time -> Mod CommandFields Action
 listAction time =
-  command
+  commandWithShortcut
     "list"
     ( info
         ( ListNotes
             <$> noteFilter time
-            <*> many (option noteAttribute (short 'a' <> long "attribute" <> help "Note attributes which are shown (id|created|modified|extension|tags). You can use '-a' multiple times"))
+            <*> many
+              ( option
+                  noteAttribute
+                  ( short 'a'
+                      <> long "attribute"
+                      <> help "Note attributes which are shown (id|created|modified|extension|tags). You can use '-a' multiple times"
+                  )
+              )
             <*> option auto (value 20 <> long "amount" <> help "Amount of notes to list")
             <*> ( Ascending <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
-                    <|> Descending <$> option noteAttribute (value AttributeId <> long "descending" <> help "Order notes by attribute in descending manner")
+                    <|> Descending <$> option noteAttribute (value AttributeModified <> long "descending" <> help "Order notes by attribute in descending manner")
                 )
             <*> searchText
         )
@@ -107,7 +113,7 @@ listAction time =
     <> metavar "list"
 
 scanAction :: Mod CommandFields Action
-scanAction = command "scan" (info (pure ScanNotes) (progDesc "Scan notes and update database")) <> metavar "scan"
+scanAction = commandWithShortcut "scan" (info (pure ScanNotes) (progDesc "Scan notes and update database")) <> metavar "scan"
 
 searchText :: Parser Text
 searchText = strArgument (value "" <> help "Initial search text" <> metavar "Search text")
@@ -120,6 +126,9 @@ noteFilter time = do
         either (fail . unpack) pure $ parseNoteFilter time filterString
     )
     (long "filter" <> short 'f' <> value EveryNote)
+
+commandWithShortcut :: String -> ParserInfo a -> Mod CommandFields a
+commandWithShortcut t a = command t a <> command [head t] a
 
 noteAttribute :: ReadM NoteAttribute
 noteAttribute =
