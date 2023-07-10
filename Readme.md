@@ -13,7 +13,7 @@ NeoNote is a terminal app to manage your notes. NeoNote stores your notes for yo
 
 ### Binary files
 
-You can find builds for linux x86 in the (https://github.com/Simre1/neonote/releases)[releases section].
+You can find builds for linux x86 in the [releases section](https://github.com/Simre1/neonote/releases).
 
 ### Build from source
 
