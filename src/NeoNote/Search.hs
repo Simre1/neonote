@@ -19,10 +19,9 @@ data PreparedSearch f = PreparedSearch {
   searchNotes :: Text -> f [(NoteId, NoteInfo)]
   } deriving Generic
 
-fuzzySearchNotes :: [(a, NoteContent)] -> Text -> [a]
+fuzzySearchNotes :: [(a, NoteContent)] -> Text -> [Fuzzy.Fuzzy (a, NoteContent) Text]
 fuzzySearchNotes notes searchTerm =
-  fst . Fuzzy.original
-    <$> Fuzzy.filter
+    Fuzzy.filter
       searchTerm
       notes
       ""
@@ -46,9 +45,13 @@ prepareSearch noteFilter = do
   let notes = zip (zip noteIds noteInfos) (coerce <$> noteContents)
       noteMap = M.fromList $ zip noteIds noteContents
       getNoteContent noteId = pure $ noteMap M.! noteId
-      searchNotes = pure .  sortBy (orderNote AttributeModified) . fuzzySearchNotes notes
+      searchNotes = pure . fmap (fst . Fuzzy.original) .  sortBy fuzzyNoteCompare  . fuzzySearchNotes notes
   
   pure $ PreparedSearch {
     getNoteContent = getNoteContent,
     searchNotes = searchNotes
   }
+  where 
+    fuzzyNoteCompare fuzzy1 fuzzy2 = case compare (Fuzzy.score fuzzy2) (Fuzzy.score fuzzy1) of
+      EQ -> orderNote AttributeModified (fst $ Fuzzy.original fuzzy1) (fst $ Fuzzy.original fuzzy2)
+      ordering -> ordering
