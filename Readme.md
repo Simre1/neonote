@@ -2,6 +2,8 @@
 
 NeoNote is a terminal app to manage your notes. NeoNote stores your notes for you and provides filtering and searching options to find them easily.
 
+![Animated showcase of NeoNote](recordings/showcase.gif)
+
 ## Features
 
 - Create/Edit/Delete Notes

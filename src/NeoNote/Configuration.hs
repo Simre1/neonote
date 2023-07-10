@@ -114,7 +114,7 @@ injectConfiguration additionalConfiguration app = do
   fileConfiguration <- liftIO getFileConfiguration
   let config =
         applyConfiguration
-          (additionalConfiguration <> fileConfiguration <> envConfiguration )
+          (additionalConfiguration <> envConfiguration <> fileConfiguration)
           defaultConfiguration
   interpret
     (\_ (GetConfiguration optic) -> pure $ runIdentity $ view optic config)
