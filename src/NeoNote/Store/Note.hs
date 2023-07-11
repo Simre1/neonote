@@ -69,8 +69,7 @@ runCreateNote env getNoteContent = do
   maybe
     mempty
     ( \noteContent -> do
-        filesWriteNote noteInfo noteContent
-        dbWriteNoteInfo noteInfo
+        runWriteNote noteInfo noteContent
     )
     maybeNoteContent
 

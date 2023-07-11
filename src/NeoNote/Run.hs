@@ -63,9 +63,10 @@ handleCreateNote initialText skipEditor = do
     if hasContent noteContent
       then do
         logMessage NoteCreated
+        pure $ Just noteContent
       else do
         logMessage NoteEmpty
-    pure $ Just noteContent
+        pure Nothing
 
 editNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
 editNote noteFilter searchTerm skipPicker = do

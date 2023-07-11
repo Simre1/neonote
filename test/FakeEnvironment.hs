@@ -78,7 +78,7 @@ runFakeConfiguration fakeData eff = do
             InsertEditorCmd -> do
               text <- head <$> get
               modify @[Text] tail
-              pure $ "tee \"" <> text <> "\" >%"
+              pure $ "echo -n \"" <> text <> "\" >>%"
     )
     eff
 
