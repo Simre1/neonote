@@ -50,7 +50,7 @@ handleAction action = case action of
     listNotes noteFilter searchText attributesToShow showAmount orderBy
   Action.ScanNotes -> scanNotes
 
-handleCreateNote :: (GetConfiguration :> es, GetTime :> es, MakeId :> es, UI :> es, Files :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
+handleCreateNote :: (UI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 handleCreateNote initialText skipEditor = do
   createNote $ \noteInfo -> do
     let initialNoteContent = NoteContent initialText
@@ -67,7 +67,7 @@ handleCreateNote initialText skipEditor = do
         logMessage NoteEmpty
     pure $ Just noteContent
 
-editNote :: (UI :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
+editNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
 editNote noteFilter searchTerm skipPicker = do
   maybeSelectedNoteInfo <-
     if skipPicker
@@ -89,7 +89,7 @@ editNote noteFilter searchTerm skipPicker = do
           logMessage NoteEmpty
     _ -> logMessage NoMatchingNote
 
-handleDeleteNote' :: (UI :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
+handleDeleteNote' :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
 handleDeleteNote' noteFilter searchTerm skipPicker = do
   maybeSelectedNoteId <-
     if skipPicker
@@ -105,7 +105,7 @@ handleDeleteNote' noteFilter searchTerm skipPicker = do
         deleteNote noteId
     _ -> logMessage NoMatchingNote
 
-viewNote :: (UI :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
+viewNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Bool -> Eff es ()
 viewNote noteFilter searchTerm skipPicker = do
   maybeSelectedNoteInfo <-
     if skipPicker
@@ -120,7 +120,7 @@ viewNote noteFilter searchTerm skipPicker = do
       displayNote noteInfo noteContent
     _ -> logMessage NoMatchingNote
 
-listNotes :: (UI :> es, Error NeoNoteError :> es, Database :> es, Files :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
+listNotes :: (UI :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 listNotes noteFilter search noteAttributes showAmount orderBy = do
   displayNotes noteFilter search orderBy showAmount noteAttributes
 
