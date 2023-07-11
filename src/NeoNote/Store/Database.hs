@@ -1,6 +1,7 @@
 module NeoNote.Store.Database where
 
 import Control.Monad (forM, forM_, when)
+import Control.Monad.Trans.State
 import Data.Bifunctor (bimap)
 import Data.Coerce
 import Data.List (intersperse)
@@ -13,12 +14,12 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
+import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
 import NeoNote.Time (IncompleteTime (..), timeFromString, timeToString)
 import Optics.Core
-import NeoNote.Configuration
 import System.FilePath (joinPath)
 
 data Database :: Effect where
@@ -49,29 +50,34 @@ runDatabase eff = do
           )
           (inject eff)
   where
-    noteFilterToCondition :: NoteFilter -> (Text, [DB.NamedParam])
-    noteFilterToCondition (HasTag tag) =
-      let tagText = coerce @_ @Text tag
-       in ( [__i| (exists ( select noteId, tag from tags where id = noteId and tag = :::::::#{tagText})) |],
-            [":::::::" <> tagText DB.:= tagText]
-          )
+    newParam :: Text -> State [DB.NamedParam] Text
+    newParam input = do
+      params <- get
+      let paramName = pack $ (":namedparam"++) $ show $ length params
+      modify ((paramName DB.:= input) :)
+      pure paramName
+
+    noteFilterToCondition :: NoteFilter -> State [DB.NamedParam] Text
+    noteFilterToCondition (HasTag tag) = do
+      param <- newParam $ coerce tag
+      pure [__i| (exists ( select noteId, tag from tags where id = noteId and tag = #{param})) |]
     --
-    noteFilterToCondition (EqualDate d1 d2) = (dateLiteralToCondition "=" d1 d2, [])
-    noteFilterToCondition (AfterDate d1 d2) = (dateLiteralToCondition ">" d1 d2, [])
-    noteFilterToCondition (BeforeDate d1 d2) = (dateLiteralToCondition "<" d1 d2, [])
+    noteFilterToCondition (EqualDate d1 d2) = pure $ dateLiteralToCondition "=" d1 d2
+    noteFilterToCondition (AfterDate d1 d2) = pure $ dateLiteralToCondition ">" d1 d2
+    noteFilterToCondition (BeforeDate d1 d2) = pure $ dateLiteralToCondition "<" d1 d2
     --
-    noteFilterToCondition (And filter1 filter2) =
-      let (condition1, params1) = noteFilterToCondition filter1
-          (condition2, params2) = noteFilterToCondition filter2
-       in ([__i| (#{condition1} and #{condition2}) |], params1 ++ params2)
-    noteFilterToCondition (Or filter1 filter2) =
-      let (condition1, params1) = noteFilterToCondition filter1
-          (condition2, params2) = noteFilterToCondition filter2
-       in ([__i| (#{condition1} or #{condition2}) |], params1 ++ params2)
-    noteFilterToCondition (Not filter1) =
-      let (condition1, params1) = noteFilterToCondition filter1
-       in ([__i| (not #{condition1}) |], params1)
-    noteFilterToCondition EveryNote = ("1=1", [])
+    noteFilterToCondition (And filter1 filter2) = do
+      condition1 <- noteFilterToCondition filter1
+      condition2 <- noteFilterToCondition filter2
+      pure [__i| (#{condition1} and #{condition2}) |]
+    noteFilterToCondition (Or filter1 filter2) = do
+      condition1 <- noteFilterToCondition filter1
+      condition2 <- noteFilterToCondition filter2
+      pure [__i| (#{condition1} or #{condition2}) |]
+    noteFilterToCondition (Not filter1) = do
+      condition <- noteFilterToCondition filter1
+      pure [__i| (not #{condition}) |]
+    noteFilterToCondition EveryNote = pure "1=1"
     dateLiteralToCondition :: Text -> DateLiteral -> DateLiteral -> Text
     dateLiteralToCondition operation d1 d2 =
       let sqlConcat atoms = mconcat $ intersperse " || " atoms
@@ -186,7 +192,7 @@ runDatabase eff = do
 
     handleFindNotes :: DB.Connection -> NoteFilter -> Eff es' [NoteId]
     handleFindNotes connection notesFilter = do
-      let (condition, params) = noteFilterToCondition notesFilter
+      let (condition, params) = runState (noteFilterToCondition notesFilter) []
           conditionSQL =
             if not (T.null condition)
               then "where " <> condition

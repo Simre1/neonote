@@ -81,7 +81,8 @@ library
         megaparsec,
         table-layout,
         data-default,
-        config-ini
+        config-ini,
+        transformers
         
     hs-source-dirs:   src
 

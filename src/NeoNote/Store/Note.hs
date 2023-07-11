@@ -43,7 +43,7 @@ runWriteNote :: (Database :> es, Files :> es, GetTime :> es) => NoteInfo -> Note
 runWriteNote noteInfo noteContent = do
   let tags = extractTags noteContent
   currentTime <- getCurrentTime
-  let updatedNoteInfo =
+  let updatedNoteInfo = 
         noteInfo
           { tags = tags,
             modified = currentTime
