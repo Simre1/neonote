@@ -142,6 +142,10 @@ You have two options to specify configurations:
 - `config.ini` within the xdg config directory which will be created on the first neonote execution
 - environment variables (`NEONOTE_PATH`, `NEONOTE_EDITOR`, `NEONOTE_EXTENSION`)
 
+### Default note location
+
+Per default, neonote stores notes as `md` (Markdown) files in a folder `neonote` in the XDG data directory (`.local/share/neonote` on Linux).  
+
 ### Possible Editors
 
 You can choose any editor you want by specifying it in the configuration.
