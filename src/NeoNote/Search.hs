@@ -1,22 +1,20 @@
 module NeoNote.Search where
 import Effectful
-import NeoNote.Store.Database
-import NeoNote.Store.Files
 import Effectful.Error.Dynamic
 import NeoNote.Error
 import NeoNote.Note.Note
 import Data.Text (Text)
 import Text.Fuzzy qualified as Fuzzy
 import Data.Coerce (coerce)
-import Control.Monad (zipWithM)
 import Data.Map qualified as M
 import GHC.Generics (Generic)
 import Optics.Core ((^.))
 import Data.List (sortBy)
+import NeoNote.Store.Note
 
 data PreparedSearch f = PreparedSearch {
   getNoteContent :: NoteId -> f NoteContent,
-  searchNotes :: Text -> f [(NoteId, NoteInfo)]
+  searchNotes :: Text -> f [NoteInfo]
   } deriving Generic
 
 fuzzySearchNotes :: [(a, NoteContent)] -> Text -> [Fuzzy.Fuzzy (a, NoteContent) Text]
@@ -35,14 +33,14 @@ mapPreparedSearch f preparedSearch = PreparedSearch {
   searchNotes = f . (preparedSearch ^. #searchNotes)
 }
 
-prepareSearch :: (Database :> es, Files :> es, Error NeoNoteError :> es) => NoteFilter ->  Eff es (PreparedSearch (Eff es2))
+prepareSearch :: (NoteStore :> es, Error NeoNoteError :> es) => NoteFilter ->  Eff es (PreparedSearch (Eff es2))
 prepareSearch noteFilter = do
   
   noteIds <- findNotes noteFilter
   noteInfos <- traverse getNoteInfo noteIds
-  noteContents <- zipWithM readNote noteIds noteInfos
+  noteContents <- traverse readNote noteInfos
 
-  let notes = zip (zip noteIds noteInfos) (coerce <$> noteContents)
+  let notes = zip noteInfos (coerce <$> noteContents)
       noteMap = M.fromList $ zip noteIds noteContents
       getNoteContent noteId = pure $ noteMap M.! noteId
       searchNotes = pure . fmap (fst . Fuzzy.original) .  sortBy fuzzyNoteCompare  . fuzzySearchNotes notes

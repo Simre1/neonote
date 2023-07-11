@@ -20,13 +20,12 @@ import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Search
-import NeoNote.Store.Database
-import NeoNote.Store.Files
 import Optics.Core
 import NeoNote.Time (timeToString)
 import Data.String.Interpolate
+import NeoNote.Store.Note
 
-picker :: (IOE :> es, Database :> es, Files :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteId)
+picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> Eff es (Maybe NoteInfo)
 picker noteFilter initialText = do
   preparedSearch <- prepareSearch noteFilter
 
@@ -35,7 +34,7 @@ picker noteFilter initialText = do
     catch (pickerApp preparedSearchIO initialText) $ \e -> do
       unlift $ throwError $ SearchUICrashed e
 
-pickerApp :: PreparedSearch IO -> Text -> IO (Maybe NoteId)
+pickerApp :: PreparedSearch IO -> Text -> IO (Maybe NoteInfo)
 pickerApp preparedSearch initialSearchTerm = do
   initialState <- makeInitialState
   uiState <- defaultMain app initialState
@@ -53,7 +52,7 @@ pickerApp preparedSearch initialSearchTerm = do
     makeInitialState :: IO UIState
     makeInitialState = do
       filteredNotes <- (preparedSearch ^. #searchNotes) initialSearchTerm
-      noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . fst) $ filteredNotes !? 0
+      noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . view #id) $ filteredNotes !? 0
       pure $ UIState filteredNotes 0 noteContent (E.editorText "editor" Nothing initialSearchTerm) Nothing
 
     drawUI :: UIState -> T.Widget Text
@@ -65,8 +64,8 @@ pickerApp preparedSearch initialSearchTerm = do
           padTop Max $ (<+> vBorder) $ padAll 1 $ case imap drawItem (st ^. #filteredNotes) of
             [] -> txt "No notes match your query"
             items -> foldl1 (<=>) items
-        drawItem i (_, noteInfo) =
-          (if i == st ^. #position then withAttr selectedAttr else id) $
+        drawItem index noteInfo =
+          (if index == st ^. #position then withAttr selectedAttr else id) $
             txt [__i| #{timeToString $ noteInfo ^. #modified}\n #{T.take 30 $ concatTags $ noteInfo ^. #tags}  |]
         searchbar =
           hBorder
@@ -81,9 +80,7 @@ pickerApp preparedSearch initialSearchTerm = do
       (T.VtyEvent (Vty.EvKey Vty.KEnter [])) -> do
         modify $ \state ->
           state
-            & #result .~ do
-              (noteId, _) <- (state ^. #filteredNotes) !? (state ^. #position)
-              pure noteId
+            & #result .~ (state ^. #filteredNotes) !? (state ^. #position)
         M.halt
       (T.VtyEvent (Vty.EvKey Vty.KUp [])) -> do
         modify $ #position %~ max 0 . pred
@@ -103,7 +100,7 @@ pickerApp preparedSearch initialSearchTerm = do
         updatePreview = do
           position <- view #position <$> get
           filteredNotes <- view #filteredNotes <$> get
-          noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . fst) $ filteredNotes !? position
+          noteContent <- liftIO $ traverse ((preparedSearch ^. #getNoteContent) . view #id) $ filteredNotes !? position
           modify $ #previewedNote .~ noteContent
 
     selectedAttr :: A.AttrName
@@ -117,10 +114,10 @@ pickerApp preparedSearch initialSearchTerm = do
         ]
 
 data UIState = UIState
-  { filteredNotes :: [(NoteId, NoteInfo)],
+  { filteredNotes :: [NoteInfo],
     position :: Int,
     previewedNote :: Maybe NoteContent,
     searchTerm :: E.Editor Text Text,
-    result :: Maybe NoteId
+    result :: Maybe NoteInfo
   }
   deriving (Generic, Show)

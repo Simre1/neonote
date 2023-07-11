@@ -17,11 +17,11 @@ import NeoNote.Log
 import Effectful.Error.Dynamic
 import NeoNote.Error
 
-runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NoteId -> NoteInfo -> NoteContent -> Eff es NoteContent
-runEditor noteId noteInfo oldNoteContent = do
+runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NoteInfo -> NoteContent -> Eff es NoteContent
+runEditor noteInfo oldNoteContent = do
   editorCommandTemplate <- getConfiguration #editor
   suffix <- pack . show <$> randomRIO @Int (10000, 99999)
-  let fileName = suffix <> "-" <> noteFileName noteId noteInfo
+  let fileName = suffix <> "-" <> noteFileName noteInfo
   withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommandTemplate fileName oldNoteContent) $ \e -> do
     unlift $ throwError $ EditingCrashed e
 

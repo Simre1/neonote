@@ -4,8 +4,6 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 import NeoNote.Note.Note
 
-data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
-
 data Action
   = CreateNote
       { skipEditor :: Bool,

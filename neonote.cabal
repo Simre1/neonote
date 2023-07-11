@@ -30,6 +30,7 @@ library
     import:           common
     exposed-modules:  
         Data.List.SafeIndex
+        Data.Functor.Empty
 
         NeoNote.Search
         NeoNote.Note.Note
@@ -38,6 +39,7 @@ library
         NeoNote.Store.Database
         NeoNote.Store.Database.Error
         NeoNote.Store.Files
+        NeoNote.Store.Note
         NeoNote.Run
         NeoNote.Configuration
         NeoNote.Actions

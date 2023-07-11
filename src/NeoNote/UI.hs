@@ -5,13 +5,11 @@ import Effectful
 import Effectful.Dispatch.Dynamic
 import Effectful.Error.Dynamic (Error)
 import Effectful.TH (makeEffect)
-import NeoNote.Actions (Action, OrderBy)
+import NeoNote.Actions (Action)
 import NeoNote.Configuration
 import NeoNote.Error (NeoNoteError)
 import NeoNote.Log
 import NeoNote.Note.Note
-import NeoNote.Store.Database (Database)
-import NeoNote.Store.Files (Files)
 import NeoNote.Time
 import NeoNote.UI.Editor (runEditor)
 import NeoNote.UI.ParseArguments (parseActionFromArguments)
@@ -19,23 +17,24 @@ import NeoNote.UI.Picker (picker)
 import NeoNote.UI.Prompt
 import NeoNote.UI.DisplayNotes
 import NeoNote.UI.DisplayNote (displayNoteInTerminal)
+import NeoNote.Store.Note (NoteStore)
 
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
-  Editor :: NoteId -> NoteInfo -> NoteContent -> UI m NoteContent
-  Pick :: NoteFilter -> Text -> UI m (Maybe NoteId)
+  Editor :: NoteInfo -> NoteContent -> UI m NoteContent
+  Pick :: NoteFilter -> Text -> UI m (Maybe NoteInfo)
   Prompt :: Prompt a -> UI m a
   DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute]  -> UI m ()
-  DisplayNote :: NoteId -> NoteInfo -> NoteContent -> UI m ()
+  DisplayNote :: NoteInfo -> NoteContent -> UI m ()
 
 makeEffect ''UI
 
-runUI :: (IOE :> es, Database :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, Files :> es, GetConfiguration :> es) => Eff (UI : es) a -> Eff es a
+runUI :: (IOE :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \_ uiEffect -> do
   case uiEffect of
-    Editor noteId noteInfo noteContent -> runEditor noteId noteInfo noteContent
+    Editor noteInfo noteContent -> runEditor noteInfo noteContent
     GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
     Pick noteFilter searchTerm -> picker noteFilter searchTerm
     Prompt promptType -> askPrompt promptType
     DisplayNotes noteFilter search orderBy displayAmount noteAttributes -> displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
-    DisplayNote noteId noteInfo noteContent -> displayNoteInTerminal noteId noteInfo noteContent
+    DisplayNote noteInfo noteContent -> displayNoteInTerminal noteInfo noteContent

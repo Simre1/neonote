@@ -16,22 +16,23 @@ import Effectful.TH (makeEffect)
 import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
-import NeoNote.Store.Files
 import NeoNote.Time (IncompleteTime (..), timeFromString, timeToString)
 import Optics.Core
+import NeoNote.Configuration
+import System.FilePath (joinPath)
 
 data Database :: Effect where
-  GetNoteInfo :: NoteId -> Database m NoteInfo
-  WriteNoteInfo :: NoteId -> NoteInfo -> Database m ()
-  FindNotes :: NoteFilter -> Database m [NoteId]
-  NoteExists :: NoteId -> Database m Bool
-  DBDeleteNote :: NoteId -> Database m ()
+  DbGetNoteInfo :: NoteId -> Database m NoteInfo
+  DbWriteNoteInfo :: NoteInfo -> Database m ()
+  DbFindNotes :: NoteFilter -> Database m [NoteId]
+  DbNoteExists :: NoteId -> Database m Bool
+  DbDeleteNote :: NoteId -> Database m ()
 
 makeEffect ''Database
 
-runDatabase :: forall es a es'. (es' ~ Error DatabaseError : es, IOE :> es, Files :> es, Error NeoNoteError :> es) => Eff (Database : es) a -> Eff es a
+runDatabase :: forall es a es'. (es' ~ Error DatabaseError : es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => Eff (Database : es) a -> Eff es a
 runDatabase eff = do
-  dbPath <- getDatabasePath
+  dbPath <- makeDatabasePath <$> getConfiguration #notesPath
   withRunInIO $ \unlift ->
     DB.withConnection dbPath $ \connection -> do
       mapM_ (DB.execute_ connection) tables
@@ -40,11 +41,11 @@ runDatabase eff = do
         maybe (pure ()) throwError maybeTableVersionError
         interpret
           ( \_ databaseEffect -> case databaseEffect of
-              NoteExists noteId -> handleNoteExists connection noteId
-              WriteNoteInfo noteId noteInfo -> handleWriteNoteInfo connection noteId noteInfo
-              GetNoteInfo noteId -> handleGetNoteInfo connection noteId
-              FindNotes notesFilter -> handleFindNotes connection notesFilter
-              DBDeleteNote noteId -> handleDBDeleteNote connection noteId
+              DbNoteExists noteId -> handleNoteExists connection noteId
+              DbWriteNoteInfo noteInfo -> handleWriteNoteInfo connection noteInfo
+              DbGetNoteInfo noteId -> handleGetNoteInfo connection noteId
+              DbFindNotes notesFilter -> handleFindNotes connection notesFilter
+              DbDeleteNote noteId -> handleDBDeleteNote connection noteId
           )
           (inject eff)
   where
@@ -112,8 +113,8 @@ runDatabase eff = do
           |]
           (DB.Only $ noteIdToText noteId)
 
-    handleWriteNoteInfo :: DB.Connection -> NoteId -> NoteInfo -> Eff es' ()
-    handleWriteNoteInfo connection noteId noteInfo =
+    handleWriteNoteInfo :: DB.Connection -> NoteInfo -> Eff es' ()
+    handleWriteNoteInfo connection noteInfo =
       liftIO $ DB.withTransaction connection $ do
         DB.execute
           connection
@@ -121,7 +122,7 @@ runDatabase eff = do
             insert or replace into notes (id, extension, created, modified) 
             values (?,?,?,?)
           |]
-          ( noteIdToText noteId,
+          ( noteIdToText (noteInfo ^. #id),
             noteInfo ^. #extension,
             timeToString $ noteInfo ^. #created,
             timeToString $ noteInfo ^. #modified
@@ -132,7 +133,7 @@ runDatabase eff = do
             delete from tags
             where noteId = ?
           |]
-          (DB.Only $ noteIdToText noteId)
+          (DB.Only $ noteIdToText (noteInfo ^. #id))
         forM_ (noteInfo ^. #tags) $ \tag ->
           DB.execute
             connection
@@ -140,7 +141,7 @@ runDatabase eff = do
               insert into tags (noteId, tag)
               values (?,?)
             |]
-            (noteIdToText noteId, coerce @_ @Text tag)
+            (noteIdToText (noteInfo ^. #id), coerce @_ @Text tag)
 
     handleGetNoteInfo :: DB.Connection -> NoteId -> Eff es' NoteInfo
     handleGetNoteInfo connection noteId = do
@@ -175,7 +176,8 @@ runDatabase eff = do
               timeFromString modifiedText
           pure $
             NoteInfo
-              { tags = S.fromList $ Tag . (\(DB.Only tagText) -> tagText) <$> resultsTags,
+              { id = noteId,
+                tags = S.fromList $ Tag . (\(DB.Only tagText) -> tagText) <$> resultsTags,
                 created = created,
                 modified = modified,
                 extension = extension
@@ -245,3 +247,6 @@ tables = [noteTable, tagTable, configTable]
         CREATE TABLE IF NOT EXISTS config
           (tableVersion integer NOT NULL)
       |]
+
+makeDatabasePath :: FilePath -> FilePath
+makeDatabasePath notesPath = joinPath [notesPath, "notes.db"]

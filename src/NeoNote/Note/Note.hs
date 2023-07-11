@@ -8,7 +8,7 @@ import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
 import NeoNote.Time
-import Optics.Core (Lens', (^.))
+import Optics.Core (Lens', coerced, (%), (^.))
 
 newtype NoteId = NoteId Id deriving (Generic, Show, Eq, Ord)
 
@@ -38,12 +38,13 @@ data NoteFilter
 newtype Tag = Tag Text deriving (Generic, Show, Eq, Ord)
 
 data NoteInfo = NoteInfo
-  { tags :: S.Set Tag,
+  { id :: NoteId,
+    tags :: S.Set Tag,
     extension :: Text,
     created :: Time,
     modified :: Time
   }
-  deriving (Generic, Show, Eq, Ord)
+  deriving (Generic, Eq, Ord, Show)
 
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
 
@@ -60,12 +61,12 @@ hasContent (NoteContent content) =
   not $
     T.null (T.strip content)
 
-noteFileName :: NoteId -> NoteInfo -> Text
-noteFileName noteId noteInfo = coerce noteId <> "." <> noteInfo ^. #extension
+noteFileName :: NoteInfo -> Text
+noteFileName noteInfo = noteInfo ^. #id % coerced <> "." <> noteInfo ^. #extension % coerced
 
-orderNote :: NoteAttribute -> (NoteId, NoteInfo) -> (NoteId, NoteInfo) -> Ordering
-orderNote noteAttribute (id1, info1) (id2, info2) = case noteAttribute of
-  AttributeId -> compare id1 id2
+orderNote :: NoteAttribute -> NoteInfo -> NoteInfo -> Ordering
+orderNote noteAttribute info1 info2 = case noteAttribute of
+  AttributeId -> compareField #id
   AttributeCreated -> compareField #created
   AttributeModified -> compareField #modified
   AttributeExtension -> compareField #extension
@@ -80,3 +81,5 @@ concatTags tags =
     intersperse "," $
       coerce
         <$> S.toList tags
+
+data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
