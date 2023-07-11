@@ -4,12 +4,13 @@ import Control.Exception (SomeException)
 import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Store.Database.Error
+import GHC.Generics (Generic)
 
 data NeoNoteError = 
   EditingCrashed SomeException |
   SearchUICrashed SomeException |
   FileAccessFailed SomeException |
-  DatabaseError DatabaseError CallStack deriving (Show)
+  DatabaseError DatabaseError CallStack deriving (Show, Generic)
 
 runDatabaseError :: (Error NeoNoteError :> es) => Eff (Error DatabaseError : es) a -> Eff es a
 runDatabaseError eff = do

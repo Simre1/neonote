@@ -5,12 +5,14 @@ import Data.Text.IO qualified as T (putStrLn)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH (makeEffect)
+import GHC.Generics (Generic)
 
 data Message
   = NoMatchingNote
   | NoteCreated
   | NoteEmpty
   | NoteEdited
+  deriving (Generic, Show, Eq, Ord)
 
 data Warning
 

@@ -28,7 +28,7 @@ deriving instance Show (Configuration Maybe)
 deriving instance Show (Configuration Identity)
 
 data GetConfiguration :: Effect where
-  GetConfiguration :: Lens' (Configuration Identity) (Identity a) -> GetConfiguration m a
+  GetConfiguration :: (forall f. Lens' (Configuration f) (f a)) -> GetConfiguration m a
 
 makeEffect ''GetConfiguration
 
@@ -116,6 +116,7 @@ injectConfiguration additionalConfiguration app = do
         applyConfiguration
           (additionalConfiguration <> envConfiguration <> fileConfiguration)
           defaultConfiguration
+  liftIO $ createDirectoryIfMissing True $ runIdentity $ config ^. #notesPath
   interpret
     (\_ (GetConfiguration optic) -> pure $ runIdentity $ view optic config)
     app
