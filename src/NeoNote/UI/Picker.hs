@@ -7,6 +7,7 @@ import Brick.Types qualified as T
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.Edit qualified as E
 import Control.Exception (catch)
+import Control.Monad (when)
 import Data.Coerce (coerce)
 import Data.List.SafeIndex
 import Data.Maybe (fromMaybe, listToMaybe)
@@ -25,20 +26,32 @@ import NeoNote.Store.Note
 import NeoNote.Time (timeToString)
 import Optics.Core
 
-data PickedAction = Delete NoteInfo | View NoteInfo | Edit NoteInfo deriving (Show, Eq, Generic, Ord)
+data PickedAction = PickedView NoteInfo | PickedEdit NoteInfo | PickedDelete NoteInfo deriving (Show, Eq, Generic, Ord)
 
-picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, NoteSearch :> es) => NoteFilter -> Text -> Eff es (Maybe NoteInfo)
-picker noteFilter initialText = do
+picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, NoteSearch :> es) => NoteFilter -> Text -> (Maybe PickedAction -> Eff es Bool) -> Eff es ()
+picker noteFilter initialText handlePickedAction = do
   withRunInIO $ \unlift -> do
     unlift $ withNoteSearchHandle $ \noteSearchHandle -> do
-      catch (pickerApp noteSearchHandle noteFilter initialText) $ \e -> do
-        unlift $ throwError $ SearchUICrashed e
+      catch
+        ( do
+            let singlePick previousUIState = do
+                  currentUIState <- refreshNotes noteSearchHandle previousUIState
+                  uiState <- pickerApp noteSearchHandle currentUIState
+                  continue <- unlift $ handlePickedAction $ uiState ^. #result
+                  when continue $
+                    singlePick $
+                      uiState & #result .~ Nothing
+            singlePick (makeInitialState noteFilter initialText)
+        )
+        $ \e -> do
+          unlift $ throwError $ SearchUICrashed e
 
-pickerApp :: NoteSearchHandle -> NoteFilter -> Text -> IO (Maybe NoteInfo)
-pickerApp noteSearchHandle initialNoteFilter initialSearchTerm = do
-  initialState <- makeInitialState
-  uiState <- defaultMain app initialState
-  pure $ uiState ^. #result
+makeInitialState :: NoteFilter -> Text -> UIState
+makeInitialState initialNoteFilter initialSearchTerm = do
+  UIState [] 0 Nothing (E.editorText "editor" Nothing initialSearchTerm) initialNoteFilter Nothing
+
+pickerApp :: NoteSearchHandle -> UIState -> IO UIState
+pickerApp noteSearchHandle = defaultMain app
   where
     app :: App UIState () Text
     app =
@@ -49,16 +62,11 @@ pickerApp noteSearchHandle initialNoteFilter initialSearchTerm = do
           appStartEvent = pure (),
           appAttrMap = const theMap
         }
-    makeInitialState :: IO UIState
-    makeInitialState = do
-      filteredNotes <- (noteSearchHandle ^. #searchNotes) initialNoteFilter initialSearchTerm
-      noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) $ filteredNotes !? 0
-      pure $ UIState filteredNotes 0 noteContent (E.editorText "editor" Nothing initialSearchTerm) initialNoteFilter Nothing
 
     drawUI :: UIState -> T.Widget Text
     drawUI st =
       (notesList <+> previewNote)
-        <=> searchbar
+        <=> (hBorder <=> (searchbar <+> infos))
       where
         notesList =
           padTop Max $ (<+> vBorder) $ padAll 1 $ case imap drawItem (st ^. #filteredNotes) of
@@ -68,19 +76,30 @@ pickerApp noteSearchHandle initialNoteFilter initialSearchTerm = do
           (if index == st ^. #position then withAttr selectedAttr else id) $
             txt [__i| #{timeToString $ noteInfo ^. #modified}\n #{T.take 30 $ concatTags $ noteInfo ^. #tags}  |]
         searchbar =
-          hBorder
-            <=> padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))
+          padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))
         previewNote = padBottom Max $ padAll 1 $ padRight Max $ txt $ fromMaybe "No matched note" $ do
           coerce $ st ^. #previewedNote
+        infos = txt "edit: enter, view: ctrl-y, delete: ctrl-x, exit: esc/ctrl-c"
 
-    appEvent :: T.BrickEvent Text e -> T.EventM Text UIState ()
+    appEvent :: T.BrickEvent Text () -> T.EventM Text UIState ()
     appEvent ev = case ev of
       (T.VtyEvent (Vty.EvKey Vty.KEsc [])) -> M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'c') [Vty.MCtrl])) -> M.halt
+      (T.VtyEvent (Vty.EvKey (Vty.KChar 'z') [Vty.MCtrl])) -> M.halt
       (T.VtyEvent (Vty.EvKey Vty.KEnter [])) -> do
         modify $ \state ->
           state
-            & #result .~ (state ^. #filteredNotes) !? (state ^. #position)
+            & #result .~ (PickedEdit <$> selectedNoteInfo state)
+        M.halt
+      (T.VtyEvent (Vty.EvKey (Vty.KChar 'x') [Vty.MCtrl])) -> do
+        modify $ \state ->
+          state
+            & #result .~ (PickedDelete <$> selectedNoteInfo state)
+        M.halt
+      (T.VtyEvent (Vty.EvKey (Vty.KChar 'y') [Vty.MCtrl])) -> do
+        modify $ \state ->
+          state
+            & #result .~ (PickedView <$> selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey Vty.KUp [])) -> do
         modify $ #position %~ max 0 . pred
@@ -90,11 +109,7 @@ pickerApp noteSearchHandle initialNoteFilter initialSearchTerm = do
         updatePreview
       _ -> do
         zoom (toLensVL #searchTerm) $ E.handleEditorEvent ev
-        searchTerm <- T.strip . T.unlines . E.getEditContents . view #searchTerm <$> get
-        noteFilter <- view #noteFilter <$> get
-        filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotes) noteFilter searchTerm
-        modify $ #filteredNotes .~ filteredNotes
-        modify $ #position %~ max 0 . min (length filteredNotes - 1)
+        updateNotes
         updatePreview
       where
         updatePreview :: EventM Text UIState ()
@@ -103,16 +118,39 @@ pickerApp noteSearchHandle initialNoteFilter initialSearchTerm = do
           filteredNotes <- view #filteredNotes <$> get
           noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) $ filteredNotes !? position
           modify $ #previewedNote .~ noteContent
+        updateNotes :: EventM Text UIState ()
+        updateNotes = do
+          st <- get
+          filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotes) (st ^. #noteFilter) (getSearchTerm st)
+          put $
+            st
+              & #filteredNotes .~ filteredNotes
+              & #position %~ max 0 . min (length filteredNotes - 1)
 
-    selectedAttr :: A.AttrName
-    selectedAttr = attrName "selected"
+selectedAttr :: A.AttrName
+selectedAttr = attrName "selected"
 
-    theMap :: A.AttrMap
-    theMap =
-      A.attrMap
-        Vty.defAttr
-        [ (selectedAttr, Vty.black `on` Vty.white)
-        ]
+theMap :: A.AttrMap
+theMap =
+  A.attrMap
+    Vty.defAttr
+    [ (selectedAttr, Vty.black `on` Vty.white)
+    ]
+
+getSearchTerm :: UIState -> Text
+getSearchTerm = T.strip . T.unlines . E.getEditContents . view #searchTerm
+
+selectedNoteInfo :: UIState -> Maybe NoteInfo
+selectedNoteInfo st = (st ^. #filteredNotes) !? (st ^. #position)
+
+refreshNotes :: NoteSearchHandle -> UIState -> IO UIState
+refreshNotes noteSearchHandle st = do
+  filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotesNoCache) (st ^. #noteFilter) (getSearchTerm st)
+  noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) $ filteredNotes !? (st ^. #position)
+  pure $
+    st
+      & #previewedNote .~ noteContent
+      & #filteredNotes .~ filteredNotes
 
 data UIState = UIState
   { filteredNotes :: [NoteInfo],
@@ -120,6 +158,6 @@ data UIState = UIState
     previewedNote :: Maybe NoteContent,
     searchTerm :: E.Editor Text Text,
     noteFilter :: NoteFilter,
-    result :: Maybe NoteInfo
+    result :: Maybe PickedAction
   }
   deriving (Generic, Show)

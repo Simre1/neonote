@@ -1,5 +1,6 @@
 module NeoNote.UI where
 
+import Data.List.NonEmpty
 import Data.Text
 import Effectful
 import Effectful.Dispatch.Dynamic
@@ -10,33 +11,34 @@ import NeoNote.Configuration
 import NeoNote.Error (NeoNoteError)
 import NeoNote.Log
 import NeoNote.Note.Note
+import NeoNote.Search
+import NeoNote.Store.Note (NoteStore)
 import NeoNote.Time
+import NeoNote.UI.DisplayNote (displayNoteInTerminal)
+import NeoNote.UI.DisplayNotes
 import NeoNote.UI.Editor (runEditor)
 import NeoNote.UI.ParseArguments (parseActionFromArguments)
-import NeoNote.UI.Picker (picker)
+import NeoNote.UI.Picker (PickedAction, picker)
 import NeoNote.UI.Prompt
-import NeoNote.UI.DisplayNotes
-import NeoNote.UI.DisplayNote (displayNoteInTerminal)
-import NeoNote.Store.Note (NoteStore)
-import NeoNote.Search
-import Data.List.NonEmpty
 
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
-  Editor :: NonEmpty (NoteInfo,NoteContent) -> UI m (NonEmpty NoteContent)
-  Pick :: NoteFilter -> Text -> UI m (Maybe NoteInfo)
+  Editor :: NonEmpty (NoteInfo, NoteContent) -> UI m (NonEmpty NoteContent)
+  Pick :: NoteFilter -> Text -> (Maybe PickedAction -> m Bool) -> UI m ()
   Prompt :: Prompt a -> UI m a
-  DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute]  -> UI m ()
+  DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> UI m ()
   DisplayNote :: NoteInfo -> NoteContent -> UI m ()
 
 makeEffect ''UI
 
 runUI :: (IOE :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es, NoteSearch :> es) => Eff (UI : es) a -> Eff es a
-runUI = interpret $ \_ uiEffect -> do
+runUI = interpret $ \env uiEffect -> do
   case uiEffect of
     Editor notes -> runEditor notes
     GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
-    Pick noteFilter searchTerm -> picker noteFilter searchTerm
+    Pick noteFilter searchTerm handlePickedAction -> localSeqUnlift env $ \unlift ->
+      picker noteFilter searchTerm (unlift . handlePickedAction)
     Prompt promptType -> askPrompt promptType
-    DisplayNotes noteFilter search orderBy displayAmount noteAttributes -> displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
+    DisplayNotes noteFilter search orderBy displayAmount noteAttributes ->
+      displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
     DisplayNote noteInfo noteContent -> displayNoteInTerminal noteInfo noteContent

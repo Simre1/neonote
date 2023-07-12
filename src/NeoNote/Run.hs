@@ -17,7 +17,9 @@ import NeoNote.Store.Files (Files, runFiles)
 import NeoNote.Store.Note
 import NeoNote.Time
 import NeoNote.UI
+import NeoNote.UI.Picker (PickedAction (..))
 import NeoNote.UI.Prompt
+import Optics.Core
 
 type AppEffects = [UI, NoteSearch, NoteStore, GetTime, MakeId, Database, Files, Error NeoNoteError, Log, GetConfiguration, IOE]
 
@@ -89,19 +91,27 @@ editNote noteFilter amount searchTerm = do
 
 pickNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Eff es ()
 pickNote noteFilter searchTerm = do
-  maybeSelectedNoteInfo <- pick noteFilter searchTerm
-  case maybeSelectedNoteInfo of
-    Just noteInfo -> do
+  pick noteFilter searchTerm $ \case
+    (Just (PickedEdit noteInfo)) -> do
       noteContent <- readNote noteInfo
       (newNoteContent :| _) <- editor $ pure (noteInfo, noteContent)
-
       if hasContent newNoteContent
         then do
           writeNote noteInfo newNoteContent
           logMessage NoteEdited
         else do
           logMessage NoteEmpty
-    _ -> logMessage NoMatchingNote
+      pure False
+    (Just (PickedDelete noteInfo)) -> do
+      answer <- prompt (AreYouSureDeletion 1)
+      when answer $ do
+        deleteNote noteInfo
+      pure True
+    (Just (PickedView noteInfo)) -> do
+      noteContent <- readNote noteInfo
+      displayNote noteInfo noteContent
+      pure False
+    _ -> False <$ logMessage NoMatchingNote
 
 handleDeleteNote' :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
 handleDeleteNote' noteFilter amount searchTerm = do
