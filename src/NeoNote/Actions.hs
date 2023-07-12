@@ -11,17 +11,21 @@ data Action
       }
   | EditNote
       { noteFilter :: NoteFilter,
-        skipPicker :: Bool,
+        amount :: Int,
         search :: Text
       }
   | DeleteNote
       { noteFilter :: NoteFilter,
-        skipPicker :: Bool,
+        amount :: Int,
         search :: Text
       }
   | ViewNote
       { noteFilter :: NoteFilter,
-        skipPicker :: Bool,
+        amount :: Int,
+        search :: Text
+      }
+  | PickNote
+      { noteFilter :: NoteFilter,
         search :: Text
       }
   | ListNotes

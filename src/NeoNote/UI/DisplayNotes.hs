@@ -9,23 +9,21 @@ import Effectful
 import Effectful.Error.Dynamic (Error)
 import NeoNote.Data.Id (idToText)
 import NeoNote.Error (NeoNoteError)
+import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Search
+import NeoNote.Store.Note (NoteStore)
 import NeoNote.Time
 import Optics.Core
 import Text.Layout.Table
-import NeoNote.Log
-import NeoNote.Store.Note (NoteStore)
 
-displayNotesInTerminal :: (IOE :> es, Error NeoNoteError :> es, Log :> es, NoteStore :> es) => NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> Eff es ()
+displayNotesInTerminal :: (IOE :> es, Error NeoNoteError :> es, Log :> es, NoteStore :> es, NoteSearch :> es) => NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> Eff es ()
 displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' = do
-  preparedSearch <- prepareSearch noteFilter
-
-  notes <- (preparedSearch ^. #searchNotes) search
+  notes <- searchNotes noteFilter search
   let notesToDisplay =
         applyOrder $ take displayAmount $ sortBy (orderNote orderNoteAttribute) notes
 
-  rows <- traverse (makeNoteRows (preparedSearch ^. #getNoteContent)) notesToDisplay
+  rows <- traverse makeNoteRows notesToDisplay
   let table =
         tableString
           ((makeColumn <$> noteAttributes) ++ [column (expandUntil 40) left def def])
@@ -42,9 +40,9 @@ displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' =
       _ -> noteAttributes'
     makeColumn AttributeTags = column (expandUntil 30) left def def
     makeColumn _ = def
-    makeNoteRows getNoteContent noteInfo = do
+    makeNoteRows noteInfo = do
       let attributeCells = attributeToCell noteInfo <$> noteAttributes
-      noteContentCell <- getNoteContent $ noteInfo ^. #id
+      noteContentCell <- getNoteContent noteInfo
       pure $ rowG $ attributeCells ++ [unpack $ T.replace "\n" "  " $ T.take 60 $ coerce noteContentCell]
     makeTitle AttributeId = "id"
     makeTitle AttributeCreated = "created"

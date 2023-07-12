@@ -27,6 +27,7 @@ version = infoOption (showVersion P.version) (short 'v' <> long "version" <> hel
 programActions :: Time -> Parser Action
 programActions time =
   hsubparser createAction
+    <|> hsubparser (pickAction time)
     <|> hsubparser (editAction time)
     <|> hsubparser (viewAction time)
     <|> hsubparser (deleteAction time)
@@ -35,7 +36,8 @@ programActions time =
 
 createAction :: Mod CommandFields Action
 createAction =
-  commandWithShortcut "create"
+  commandWithShortcut
+    "create"
     ( info
         ( CreateNote
             <$> switch (long "skip-editor" <> short 's' <> help "Skip the editor and save the note")
@@ -52,7 +54,7 @@ editAction time =
     ( info
         ( EditNote
             <$> noteFilter time
-            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and edit the first note")
+            <*> noteAmount 1
             <*> searchText
         )
         (progDesc "Edit a note")
@@ -66,7 +68,7 @@ deleteAction time =
     ( info
         ( DeleteNote
             <$> noteFilter time
-            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and delete the first note")
+            <*> noteAmount 1
             <*> searchText
         )
         (progDesc "Delete a note")
@@ -80,12 +82,25 @@ viewAction time =
     ( info
         ( ViewNote
             <$> noteFilter time
-            <*> switch (long "skip-picker" <> short 's' <> help "Skip the picker and view the first note")
+            <*> noteAmount 1
             <*> searchText
         )
         (progDesc "View a note")
     )
     <> metavar "view"
+
+pickAction :: Time -> Mod CommandFields Action
+pickAction time =
+  commandWithShortcut
+    "pick"
+    ( info
+        ( PickNote
+            <$> noteFilter time
+            <*> searchText
+        )
+        (progDesc "Pick a note")
+    )
+    <> metavar "pick"
 
 listAction :: Time -> Mod CommandFields Action
 listAction time =
@@ -102,7 +117,7 @@ listAction time =
                       <> help "Note attributes which are shown (id|created|modified|extension|tags). You can use '-a' multiple times"
                   )
               )
-            <*> option auto (value 20 <> long "amount" <> help "Amount of notes to list")
+            <*> noteAmount 8
             <*> ( Ascending <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
                     <|> Descending <$> option noteAttribute (value AttributeModified <> long "descending" <> help "Order notes by attribute in descending manner")
                 )
@@ -117,6 +132,9 @@ scanAction = commandWithShortcut "scan" (info (pure ScanNotes) (progDesc "Scan n
 
 searchText :: Parser Text
 searchText = strArgument (value "" <> help "Initial search text" <> metavar "Search text")
+
+noteAmount :: Int -> Parser Int
+noteAmount defaultAmount = option auto (value defaultAmount <> short 'n' <> long "number" <> help "Number of notes")
 
 noteFilter :: Time -> Parser NoteFilter
 noteFilter time = do

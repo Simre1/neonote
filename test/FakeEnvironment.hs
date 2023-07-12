@@ -7,7 +7,7 @@ import Effectful.Error.Dynamic
 import Effectful.State.Static.Local
 import Effectful.Writer.Dynamic (runWriterLocal, tell)
 import GHC.Generics (Generic)
-import NeoNote.Configuration (Configuration (..), GetConfiguration (..), injectConfiguration)
+import NeoNote.Configuration (Configuration (..), GetConfiguration (..))
 import NeoNote.Data.Id (runMakeId)
 import NeoNote.Error
 import NeoNote.Log
@@ -21,6 +21,7 @@ import Optics.Core
 import System.Directory (doesDirectoryExist, getTemporaryDirectory, createDirectoryIfMissing)
 import System.FilePath (joinPath)
 import System.Random (randomRIO)
+import NeoNote.Search (runNoteSearch)
 
 runFakeIO :: FakeData -> Eff AppEffects a -> IO (FakeOutput a)
 runFakeIO fakeData eff = do
@@ -34,6 +35,7 @@ runFakeIO fakeData eff = do
       . runMakeId
       . runGetTime
       . runNoteStore
+      . runNoteSearch
       . runUI
       $ eff
   pure $ FakeOutput messages result

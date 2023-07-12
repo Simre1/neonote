@@ -4,12 +4,13 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Effectful
+import Data.String.Interpolate (i)
 
 data Prompt a where
-  AreYouSureDeletion :: Prompt Bool
+  AreYouSureDeletion :: Int -> Prompt Bool
 
 promptQuestion :: Prompt a -> Text
-promptQuestion AreYouSureDeletion = "Do you really want to delete this note ?"
+promptQuestion (AreYouSureDeletion noteAmount) = [i|Do you really want to delete #{noteAmount} note/s?|]
 
 askConfirmation :: (IOE :> es) => Eff es Bool
 askConfirmation = do
@@ -26,4 +27,4 @@ askPrompt :: (IOE :> es) => Prompt a -> Eff es a
 askPrompt prompt = do
   liftIO $ T.putStrLn $ promptQuestion prompt
   case prompt of
-    AreYouSureDeletion -> askConfirmation
+    AreYouSureDeletion _ -> askConfirmation
