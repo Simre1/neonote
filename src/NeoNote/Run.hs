@@ -1,7 +1,7 @@
 module NeoNote.Run where
 
 import Control.Monad (forM_, when)
-import Data.List.NonEmpty as NE (NonEmpty (..), zip)
+import Data.List.NonEmpty as NE (NonEmpty (..), fromList, zip)
 import Data.Text (Text)
 import Effectful
 import Effectful.Error.Dynamic
@@ -19,7 +19,6 @@ import NeoNote.Time
 import NeoNote.UI
 import NeoNote.UI.Picker (PickedAction (..))
 import NeoNote.UI.Prompt
-import Optics.Core
 
 type AppEffects = [UI, NoteSearch, NoteStore, GetTime, MakeId, Database, Files, Error NeoNoteError, Log, GetConfiguration, IOE]
 
@@ -103,7 +102,8 @@ pickNote noteFilter searchTerm = do
           logMessage NoteEmpty
       pure False
     (Just (PickedDelete noteInfo)) -> do
-      answer <- prompt (AreYouSureDeletion 1)
+      noteContent <- readNote noteInfo
+      answer <- prompt (AreYouSureDeletion ((noteInfo, noteContent) :| []))
       when answer $ do
         deleteNote noteInfo
       pure True
@@ -119,7 +119,12 @@ handleDeleteNote' noteFilter amount searchTerm = do
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     noteInfos -> do
-      answer <- prompt (AreYouSureDeletion (length noteInfos))
+      noteContents <- traverse readNote noteInfos
+      answer <-
+        prompt
+          ( AreYouSureDeletion
+              (NE.fromList $ Prelude.zip noteInfos noteContents)
+          )
       when answer $ do
         mapM_ deleteNote noteInfos
 

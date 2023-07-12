@@ -4,7 +4,6 @@ import Data.Coerce (coerce)
 import Data.Default
 import Data.List (sortBy)
 import Data.Text (Text, unpack)
-import Data.Text qualified as T
 import Effectful
 import Effectful.Error.Dynamic (Error)
 import NeoNote.Data.Id (idToText)
@@ -43,7 +42,7 @@ displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' =
     makeNoteRows noteInfo = do
       let attributeCells = attributeToCell noteInfo <$> noteAttributes
       noteContentCell <- getNoteContent noteInfo
-      pure $ rowG $ attributeCells ++ [unpack $ T.replace "\n" "  " $ T.take 60 $ coerce noteContentCell]
+      pure $ rowG $ attributeCells ++ [unpack $ noteContentPreview noteContentCell]
     makeTitle AttributeId = "id"
     makeTitle AttributeCreated = "created"
     makeTitle AttributeModified = "modified"

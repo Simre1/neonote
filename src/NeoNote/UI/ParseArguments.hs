@@ -57,7 +57,7 @@ editAction time =
             <*> noteAmount 1
             <*> searchText
         )
-        (progDesc "Edit a note")
+        (progDesc "Filter notes and then edit them")
     )
     <> metavar "edit"
 
@@ -71,7 +71,7 @@ deleteAction time =
             <*> noteAmount 1
             <*> searchText
         )
-        (progDesc "Delete a note")
+        (progDesc "Filter notes and then delete them")
     )
     <> metavar "delete"
 
@@ -85,7 +85,7 @@ viewAction time =
             <*> noteAmount 1
             <*> searchText
         )
-        (progDesc "View a note")
+        (progDesc "Filter notes and then view them")
     )
     <> metavar "view"
 
@@ -98,7 +98,7 @@ pickAction time =
             <$> noteFilter time
             <*> searchText
         )
-        (progDesc "Pick a note")
+        (progDesc "Pick notes to edit/view/delete")
     )
     <> metavar "pick"
 
@@ -123,7 +123,7 @@ listAction time =
                 )
             <*> searchText
         )
-        (progDesc "List notes")
+        (progDesc "Filter notes and list them")
     )
     <> metavar "list"
 

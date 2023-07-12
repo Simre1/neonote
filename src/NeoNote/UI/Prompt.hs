@@ -1,16 +1,23 @@
 module NeoNote.UI.Prompt where
 
+import Data.List.NonEmpty
+import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Effectful
-import Data.String.Interpolate (i)
+import NeoNote.Note.Note
+import NeoNote.Time (timeToString)
+import Optics.Core
 
 data Prompt a where
-  AreYouSureDeletion :: Int -> Prompt Bool
+  AreYouSureDeletion :: NonEmpty (NoteInfo, NoteContent) -> Prompt Bool
 
 promptQuestion :: Prompt a -> Text
-promptQuestion (AreYouSureDeletion noteAmount) = [i|Do you really want to delete #{noteAmount} note/s?|]
+promptQuestion (AreYouSureDeletion notes) = [i|Do you really want to delete the following notes notes:\n#{foldMap notesText notes}|]
+  where
+    notesText :: (NoteInfo, NoteContent) -> Text
+    notesText (noteInfo, noteContent) = [i|#{timeToString $ noteInfo ^. #modified}: #{noteContentPreview noteContent}\n|]
 
 askConfirmation :: (IOE :> es) => Eff es Bool
 askConfirmation = do
