@@ -39,39 +39,61 @@ Each command can be shortened to one letter, eg. `nn c` instead of `nn create`.
 nn create
 ```
 
-An editor will open where you can write your note
+An editor will open where you can write your note.
+Tags will be automatically found when you use the `#` symbol within a note.
+You can also start composing your note directly in the terminal by just typing the text:
+```bash
+nn c "Your first note with #neonote"
+```
 
-### Edit a note
+### Using the note picker
+
+To review already existing notes, you will normally use the picker UI. It can be opened with the following command:
+
+```
+nn pick
+```
+
+Within this UI, you can incrementally search through your notes. It is possible to edit with `ENTER`, delete with `CTRL-X` and view with `CTRL-Y`.
+You can also apply a filter before picking from your notes with the `--filter` option.
+
+### Processing notes without the picker
 
 ```
 nn edit
 ```
 
-A picker will open where you can search for a note and pick it with `<CR>`.
+`edit` will directly open your editor with all matched notes.
+Per default, it will only match `1` note with no searching or filtering.
+This means it will open the note which was last modified. 
 
-### Delete a note
-
+You can specify a filter, a search term and the amount of notes to match. The following command
+will open at most 3 notes with the tag `#neonote` and the word `todo`.
 ```
-nn delete
-```
-
-A picker will open where you can pick a note to delete.
-
-### View a note
-
-```
-nn view
+nn edit --filter neonote --number 3 todo 
 ```
 
-A picker will open and the picked note will be printed afterwards
+Similarly to the `edit` command, there exist `delete` and `view` commands to delete and view multiple notes.
+
+This will delete up to a hundred notes with the tag `#archived`.
+```
+nn delete --filter archived --number 100
+```
+
+This will view up to 10 notes with the word linux
+```
+nn view --number 10 linux
+```
 
 ### List notes
+
+The `list` command gives you an overview of your notes by printing them in a table and giving you information about their
+modification date or their tags.
 
 ```
 nn list
 ```
 
-A table view of your notes will be printed.
 Per default, the modification date, the tags and a preview of the content is shown.
 You can change which attributes of the note are shown with `--attribute` (`-a` for short):
 
@@ -81,6 +103,12 @@ nn list --attribute id --attribute created
 
 Now, `id` and `created` will be shown instead of the default `modified` and `tags`.
 The content preview will always be shown regardless of given attributes.
+
+Of course, you can combine this normal filtering and searching. The following
+command will list up to 5 notes with the `#blog` tag and the word haskell. 
+```
+nn l --filter blog --number 5 haskell
+```
 
 ## Tags
 
@@ -96,7 +124,7 @@ nn view --filter "programming"
 ```
 
 This will only allow you to pick between notes which have the tag `programming`.
-This can also be used with `delete`, `view` and `list`.
+This can also be used with `delete`, `edit` and `list`.
 
 ### Boolean logic for filtering
 
@@ -149,10 +177,10 @@ Per default, neonote stores notes as `md` (Markdown) files in a folder `neonote`
 ### Possible Editors
 
 You can choose any editor you want by specifying it in the configuration.
-However, you need to make sure that the editor blocks until the editing process is finished.
+However, you need to make sure that the editor blocks until the editing process is finished and that it can open multiple files simultanously.
 
-If your editor command has a `%`, it will be replaced with the file to edit.
-If it does not have a `%`, the file path is appended at the end of your command.
+If your editor command has a `%`, it will be replaced with the files to edit separated by a ` `.
+If it does not have a `%`, the files are appended at the end of your command.
 
 Here are some example editor configurations:
 - Vim: `vim` or `vim %`
