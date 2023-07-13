@@ -43,17 +43,17 @@ runIO =
 
 handleAction :: Action.Action -> Eff AppEffects ()
 handleAction action = case action of
-  Action.CreateNote skipEditor initialText -> handleCreateNote initialText skipEditor
-  Action.EditNote noteFilter amount searchText -> editNote noteFilter amount searchText
-  Action.PickNote noteFilter searchText -> pickNote noteFilter searchText
-  Action.DeleteNote noteFilter amount searchText -> handleDeleteNote' noteFilter amount searchText
-  Action.ViewNote noteFilter amount searchText -> viewNote noteFilter amount searchText
+  Action.CreateNote skipEditor initialText -> runCreateNoteAction initialText skipEditor
+  Action.EditNote noteFilter amount searchText -> runEditNoteAction noteFilter amount searchText
+  Action.PickNote noteFilter searchText -> runPickNoteAction noteFilter searchText
+  Action.DeleteNote noteFilter amount searchText -> runDeleteNoteAction noteFilter amount searchText
+  Action.ViewNote noteFilter amount searchText -> runViewNoteAction noteFilter amount searchText
   Action.ListNotes noteFilter attributesToShow showAmount orderBy searchText ->
-    listNotes noteFilter searchText attributesToShow showAmount orderBy
-  Action.ScanNotes -> scanNotes
+    runListNotesAction noteFilter searchText attributesToShow showAmount orderBy
+  Action.ScanNotes -> runScanNotesAction
 
-handleCreateNote :: (UI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
-handleCreateNote initialText skipEditor = do
+runCreateNoteAction :: (UI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
+runCreateNoteAction initialText skipEditor = do
   createNote $ \noteInfo -> do
     let initialNoteContent = NoteContent initialText
     (noteContent :| _) <-
@@ -62,8 +62,8 @@ handleCreateNote initialText skipEditor = do
         else editor $ pure (noteInfo, initialNoteContent)
     pure noteContent
 
-editNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
-editNote noteFilter amount searchTerm = do
+runEditNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
+runEditNoteAction noteFilter amount searchTerm = do
   selectedNotes <- take amount <$> searchNotes noteFilter searchTerm
   case selectedNotes of
     [] -> logMessage NoMatchingNote
@@ -74,8 +74,8 @@ editNote noteFilter amount searchTerm = do
 
       forM_ (NE.zip noteInfos newNoteContents) $ uncurry writeNote
 
-pickNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Eff es ()
-pickNote noteFilter searchTerm = do
+runPickNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Eff es ()
+runPickNoteAction noteFilter searchTerm = do
   pick noteFilter searchTerm $ \case
     (Just (PickedEdit noteInfo)) -> do
       noteContent <- readNote noteInfo
@@ -94,8 +94,8 @@ pickNote noteFilter searchTerm = do
       pure False
     _ -> False <$ logMessage NoMatchingNote
 
-handleDeleteNote' :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
-handleDeleteNote' noteFilter amount searchTerm = do
+runDeleteNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
+runDeleteNoteAction noteFilter amount searchTerm = do
   selectedNotes <- take amount <$> searchNotes noteFilter searchTerm
   case selectedNotes of
     [] -> logMessage NoMatchingNote
@@ -109,8 +109,8 @@ handleDeleteNote' noteFilter amount searchTerm = do
       when answer $ do
         mapM_ deleteNote noteInfos
 
-viewNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
-viewNote noteFilter amount searchTerm = do
+runViewNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
+runViewNoteAction noteFilter amount searchTerm = do
   selectedNotes <- take amount <$> searchNotes noteFilter searchTerm
   case selectedNotes of
     [] -> logMessage NoMatchingNote
@@ -119,9 +119,9 @@ viewNote noteFilter amount searchTerm = do
         noteContent <- readNote noteInfo
         displayNote noteInfo noteContent
 
-listNotes :: (UI :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
-listNotes noteFilter search noteAttributes showAmount orderBy = do
+runListNotesAction :: (UI :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
+runListNotesAction noteFilter search noteAttributes showAmount orderBy = do
   displayNotes noteFilter search orderBy showAmount noteAttributes
 
-scanNotes :: (IOE :> es) => Eff es ()
-scanNotes = liftIO $ putStrLn "Sorry, not yet implemented"
+runScanNotesAction :: (IOE :> es) => Eff es ()
+runScanNotesAction = liftIO $ putStrLn "Sorry, not yet implemented"

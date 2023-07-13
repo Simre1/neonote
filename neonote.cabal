@@ -3,7 +3,7 @@ name:               neonote
 version:            0.1.0.0
 -- synopsis:
 -- description:
-license:            MIT
+license:            GPL-2.0-only
 license-file:       LICENSE
 author:             Simre1
 maintainer:         simre4775@gmail.com
@@ -33,6 +33,7 @@ library
         Data.Functor.Empty
 
         NeoNote.Search
+        NeoNote.Note.Highlight
         NeoNote.Note.Note
         NeoNote.Note.Parse
         NeoNote.Data.Id
@@ -82,7 +83,8 @@ library
         table-layout,
         data-default,
         config-ini,
-        transformers
+        transformers,
+        skylighting
         
     hs-source-dirs:   src
 

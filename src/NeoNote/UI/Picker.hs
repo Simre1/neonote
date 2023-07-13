@@ -6,6 +6,7 @@ import Brick.Main qualified as M
 import Brick.Types qualified as T
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.Edit qualified as E
+import Control.Applicative (Applicative (..))
 import Control.Exception (catch)
 import Control.Monad (when)
 import Data.Coerce (coerce)
@@ -20,6 +21,7 @@ import GHC.Generics
 import Graphics.Vty qualified as Vty
 import NeoNote.Error
 import NeoNote.Log
+import NeoNote.Note.Highlight (highlight)
 import NeoNote.Note.Note
 import NeoNote.Search
 import NeoNote.Store.Note
@@ -116,8 +118,9 @@ pickerApp noteSearchHandle = defaultMain app
         updatePreview = do
           position <- view #position <$> get
           filteredNotes <- view #filteredNotes <$> get
-          noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) $ filteredNotes !? position
-          modify $ #previewedNote .~ noteContent
+          let noteInfo = filteredNotes !? position
+          noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
+          modify $ #previewedNote .~ liftA2 highlight noteInfo noteContent
         updateNotes :: EventM Text UIState ()
         updateNotes = do
           st <- get
@@ -146,16 +149,17 @@ selectedNoteInfo st = (st ^. #filteredNotes) !? (st ^. #position)
 refreshNotes :: NoteSearchHandle -> UIState -> IO UIState
 refreshNotes noteSearchHandle st = do
   filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotesNoCache) (st ^. #noteFilter) (getSearchTerm st)
-  noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) $ filteredNotes !? (st ^. #position)
+  let noteInfo = filteredNotes !? (st ^. #position)
+  noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
   pure $
     st
-      & #previewedNote .~ noteContent
+      & #previewedNote .~ liftA2 highlight noteInfo noteContent
       & #filteredNotes .~ filteredNotes
 
 data UIState = UIState
   { filteredNotes :: [NoteInfo],
     position :: Int,
-    previewedNote :: Maybe NoteContent,
+    previewedNote :: Maybe Text,
     searchTerm :: E.Editor Text Text,
     noteFilter :: NoteFilter,
     result :: Maybe PickedAction
