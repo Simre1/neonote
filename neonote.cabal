@@ -3,7 +3,7 @@ name:               neonote
 version:            0.1.0.0
 -- synopsis:
 -- description:
-license:            GPL-2.0-only
+license:            GPL-3.0
 license-file:       LICENSE
 author:             Simre1
 maintainer:         simre4775@gmail.com
