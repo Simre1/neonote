@@ -184,7 +184,7 @@ modificationChangesDate = testCase "Modification changes date" $ do
 
     pure $ length <$> [unmodifiedNoteIds, modifiedNoteIds]
 
-  fakeOutput ^. #logs @?= [NoteCreated]
+  fakeOutput ^. #logs @?= [NoteCreated, NoteEdited]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
     Right a -> a @?= [1,1]

@@ -56,19 +56,11 @@ handleCreateNote :: (UI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Ef
 handleCreateNote initialText skipEditor = do
   createNote $ \noteInfo -> do
     let initialNoteContent = NoteContent initialText
-
     (noteContent :| _) <-
       if skipEditor
         then pure $ pure initialNoteContent
         else editor $ pure (noteInfo, initialNoteContent)
-
-    if hasContent noteContent
-      then do
-        logMessage NoteCreated
-        pure $ Just noteContent
-      else do
-        logMessage NoteEmpty
-        pure Nothing
+    pure noteContent
 
 editNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
 editNote noteFilter amount searchTerm = do
@@ -80,13 +72,7 @@ editNote noteFilter amount searchTerm = do
       noteContents <- traverse readNote noteInfos
       newNoteContents <- editor $ NE.zip noteInfos noteContents
 
-      forM_ (NE.zip noteInfos newNoteContents) $ \(noteInfo, newNoteContent) ->
-        if hasContent newNoteContent
-          then do
-            writeNote noteInfo newNoteContent
-            logMessage NoteEdited
-          else do
-            logMessage NoteEmpty
+      forM_ (NE.zip noteInfos newNoteContents) $ uncurry writeNote
 
 pickNote :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es) => NoteFilter -> Text -> Eff es ()
 pickNote noteFilter searchTerm = do
@@ -94,12 +80,7 @@ pickNote noteFilter searchTerm = do
     (Just (PickedEdit noteInfo)) -> do
       noteContent <- readNote noteInfo
       (newNoteContent :| _) <- editor $ pure (noteInfo, noteContent)
-      if hasContent newNoteContent
-        then do
-          writeNote noteInfo newNoteContent
-          logMessage NoteEdited
-        else do
-          logMessage NoteEmpty
+      writeNote noteInfo newNoteContent
       pure False
     (Just (PickedDelete noteInfo)) -> do
       noteContent <- readNote noteInfo

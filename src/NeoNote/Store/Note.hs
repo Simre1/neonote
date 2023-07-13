@@ -5,6 +5,7 @@ import Effectful.Dispatch.Dynamic (LocalEnv, interpret, localSeqUnlift)
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
 import NeoNote.Data.Id
+import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Note.Parse (extractTags)
 import NeoNote.Store.Database
@@ -19,11 +20,11 @@ data NoteStore :: Effect where
   ReadNote :: NoteInfo -> NoteStore m NoteContent
   DeleteNote :: NoteInfo -> NoteStore m ()
   GetNoteInfo :: NoteId -> NoteStore m NoteInfo
-  CreateNote :: (NoteInfo -> m (Maybe NoteContent)) -> NoteStore m ()
+  CreateNote :: (NoteInfo -> m NoteContent) -> NoteStore m ()
 
 makeEffect ''NoteStore
 
-runNoteStore :: (Database :> es, Files :> es, GetTime :> es, GetConfiguration :> es, MakeId :> es) => Eff (NoteStore : es) a -> Eff es a
+runNoteStore :: (Database :> es, Files :> es, GetTime :> es, GetConfiguration :> es, MakeId :> es, Log :> es) => Eff (NoteStore : es) a -> Eff es a
 runNoteStore = interpret $ \env -> \case
   NoteExists noteId -> runNoteExists noteId
   FindNotes noteFilter -> runFindNotes noteFilter
@@ -39,11 +40,23 @@ runNoteExists = dbNoteExists
 runFindNotes :: (Database :> es, Files :> es) => NoteFilter -> Eff es [NoteId]
 runFindNotes = dbFindNotes
 
-runWriteNote :: (Database :> es, Files :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
+runWriteNote :: (Log :> es, Database :> es, Files :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
 runWriteNote noteInfo noteContent = do
+  if hasContent noteContent
+    then do
+      oldNoteContent <- filesReadNote noteInfo
+      if oldNoteContent /= noteContent
+        then do
+          runWriteNoteNoLogging noteInfo noteContent
+          logMessage NoteEdited
+        else logMessage NoteUnchanged
+    else logMessage NoteEmpty
+
+runWriteNoteNoLogging :: (GetTime :> es, Files :> es, Database :> es) => NoteInfo -> NoteContent -> Eff es ()
+runWriteNoteNoLogging noteInfo noteContent = do
   let tags = extractTags noteContent
   currentTime <- getCurrentTime
-  let updatedNoteInfo = 
+  let updatedNoteInfo =
         noteInfo
           { tags = tags,
             modified = currentTime
@@ -62,16 +75,16 @@ runDeleteNote noteInfo = do
 runGetNoteInfo :: (Database :> es, Files :> es) => NoteId -> Eff es NoteInfo
 runGetNoteInfo = dbGetNoteInfo
 
-runCreateNote :: (Database :> es, Files :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs (Maybe NoteContent)) -> Eff es ()
+runCreateNote :: (Database :> es, Files :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs NoteContent) -> Eff es ()
 runCreateNote env getNoteContent = do
   noteInfo <- makeNewNoteInfo
-  maybeNoteContent <- localSeqUnlift env $ \unlift -> unlift $ getNoteContent noteInfo
-  maybe
-    mempty
-    ( \noteContent -> do
-        runWriteNote noteInfo noteContent
-    )
-    maybeNoteContent
+  noteContent <- localSeqUnlift env $ \unlift -> unlift $ getNoteContent noteInfo
+  if hasContent noteContent
+    then do
+      runWriteNoteNoLogging noteInfo noteContent  
+      logMessage NoteCreated
+    else do
+      logMessage NoteEmpty
 
 makeNewNoteInfo :: (GetConfiguration :> es, GetTime :> es, Database :> es, MakeId :> es) => Eff es NoteInfo
 makeNewNoteInfo = do

@@ -12,6 +12,7 @@ data Message
   | NoteCreated
   | NoteEmpty
   | NoteEdited
+  | NoteUnchanged
   deriving (Generic, Show, Eq, Ord)
 
 data Warning
@@ -23,10 +24,11 @@ data Log :: Effect where
 makeEffect ''Log
 
 showMessage :: Message -> Text
-showMessage NoMatchingNote = "No matching note"
+showMessage NoMatchingNote = "No notes match your query"
 showMessage NoteCreated = "Note has been created"
 showMessage NoteEmpty = "Note is empty, so nothing has been done"
 showMessage NoteEdited = "Note has been edited"
+showMessage NoteUnchanged = "Note is unchanged, so nothing has been done"
 
 runLog :: (IOE :> es) => Eff (Log : es) a -> Eff es a
 runLog = interpret $ \_ -> \case

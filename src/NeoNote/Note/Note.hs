@@ -62,7 +62,7 @@ hasContent (NoteContent content) =
     T.null (T.strip content)
 
 noteContentPreview :: NoteContent -> Text
-noteContentPreview (NoteContent noteContent) = T.replace "\n" "  " $ T.take 60 noteContent
+noteContentPreview (NoteContent noteContent) = T.replace "\n" "  " $ T.take 40 noteContent
 
 noteFileName :: NoteInfo -> Text
 noteFileName noteInfo = noteInfo ^. #id % coerced <> "." <> noteInfo ^. #extension % coerced
