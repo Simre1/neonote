@@ -20,6 +20,7 @@ import NeoNote.UI.Editor (runEditor)
 import NeoNote.UI.ParseArguments (parseActionFromArguments)
 import NeoNote.UI.Picker (PickedAction, picker)
 import NeoNote.UI.Prompt
+import NeoNote.Note.Highlight (Highlight)
 
 data UI :: Effect where
   GetActionFromArguments :: UI m Action
@@ -27,11 +28,11 @@ data UI :: Effect where
   Pick :: NoteFilter -> Text -> (Maybe PickedAction -> m Bool) -> UI m ()
   Prompt :: Prompt a -> UI m a
   DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> UI m ()
-  DisplayNote :: NoteInfo -> NoteContent -> UI m ()
+  DisplayNote :: Bool -> NoteInfo -> NoteContent -> UI m ()
 
 makeEffect ''UI
 
-runUI :: (IOE :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es, NoteSearch :> es) => Eff (UI : es) a -> Eff es a
+runUI :: (IOE :> es, Highlight :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es, NoteSearch :> es) => Eff (UI : es) a -> Eff es a
 runUI = interpret $ \env uiEffect -> do
   case uiEffect of
     Editor notes -> runEditor notes
@@ -41,4 +42,4 @@ runUI = interpret $ \env uiEffect -> do
     Prompt promptType -> askPrompt promptType
     DisplayNotes noteFilter search orderBy displayAmount noteAttributes ->
       displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
-    DisplayNote noteInfo noteContent -> displayNoteInTerminal noteInfo noteContent
+    DisplayNote plain noteInfo noteContent -> displayNoteInTerminal plain noteInfo noteContent

@@ -22,6 +22,7 @@ data Action
   | ViewNote
       { noteFilter :: NoteFilter,
         amount :: Int,
+        plain :: Bool,
         search :: Text
       }
   | PickNote

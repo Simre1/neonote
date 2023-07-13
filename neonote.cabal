@@ -41,6 +41,7 @@ library
         NeoNote.Store.Database.Error
         NeoNote.Store.Files
         NeoNote.Store.Note
+        NeoNote.Cache
         NeoNote.Run
         NeoNote.Configuration
         NeoNote.Actions
@@ -84,7 +85,9 @@ library
         data-default,
         config-ini,
         transformers,
-        skylighting
+        skylighting,
+        pretty-terminal,
+        hashable
         
     hs-source-dirs:   src
 

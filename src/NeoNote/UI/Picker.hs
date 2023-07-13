@@ -21,7 +21,7 @@ import GHC.Generics
 import Graphics.Vty qualified as Vty
 import NeoNote.Error
 import NeoNote.Log
-import NeoNote.Note.Highlight (highlight)
+import NeoNote.Note.Highlight (highlight, Highlight)
 import NeoNote.Note.Note
 import NeoNote.Search
 import NeoNote.Store.Note
@@ -30,15 +30,16 @@ import Optics.Core
 
 data PickedAction = PickedView NoteInfo | PickedEdit NoteInfo | PickedDelete NoteInfo deriving (Show, Eq, Generic, Ord)
 
-picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, NoteSearch :> es) => NoteFilter -> Text -> (Maybe PickedAction -> Eff es Bool) -> Eff es ()
+picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, NoteSearch :> es, Highlight :> es) => NoteFilter -> Text -> (Maybe PickedAction -> Eff es Bool) -> Eff es ()
 picker noteFilter initialText handlePickedAction = do
   withRunInIO $ \unlift -> do
+    let highlightIO ni nc = unlift $ highlight ni nc
     unlift $ withNoteSearchHandle $ \noteSearchHandle -> do
       catch
         ( do
             let singlePick previousUIState = do
-                  currentUIState <- refreshNotes noteSearchHandle previousUIState
-                  uiState <- pickerApp noteSearchHandle currentUIState
+                  currentUIState <- refreshNotes noteSearchHandle highlightIO previousUIState
+                  uiState <- pickerApp noteSearchHandle highlightIO currentUIState
                   continue <- unlift $ handlePickedAction $ uiState ^. #result
                   when continue $
                     singlePick $
@@ -52,8 +53,8 @@ makeInitialState :: NoteFilter -> Text -> UIState
 makeInitialState initialNoteFilter initialSearchTerm = do
   UIState [] 0 Nothing (E.editorText "editor" Nothing initialSearchTerm) initialNoteFilter Nothing
 
-pickerApp :: NoteSearchHandle -> UIState -> IO UIState
-pickerApp noteSearchHandle = defaultMain app
+pickerApp :: NoteSearchHandle -> (NoteInfo -> NoteContent -> IO Text) -> UIState -> IO UIState
+pickerApp noteSearchHandle highlightIO = defaultMain app
   where
     app :: App UIState () Text
     app =
@@ -120,7 +121,8 @@ pickerApp noteSearchHandle = defaultMain app
           filteredNotes <- view #filteredNotes <$> get
           let noteInfo = filteredNotes !? position
           noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
-          modify $ #previewedNote .~ liftA2 highlight noteInfo noteContent
+          highlightedContent <- liftIO $ sequenceA $ liftA2 highlightIO noteInfo noteContent
+          modify $ #previewedNote .~ highlightedContent
         updateNotes :: EventM Text UIState ()
         updateNotes = do
           st <- get
@@ -146,14 +148,15 @@ getSearchTerm = T.strip . T.unlines . E.getEditContents . view #searchTerm
 selectedNoteInfo :: UIState -> Maybe NoteInfo
 selectedNoteInfo st = (st ^. #filteredNotes) !? (st ^. #position)
 
-refreshNotes :: NoteSearchHandle -> UIState -> IO UIState
-refreshNotes noteSearchHandle st = do
+refreshNotes :: NoteSearchHandle -> (NoteInfo -> NoteContent -> IO Text) -> UIState -> IO UIState
+refreshNotes noteSearchHandle highlightIO st = do
   filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotesNoCache) (st ^. #noteFilter) (getSearchTerm st)
   let noteInfo = filteredNotes !? (st ^. #position)
   noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
+  highlightedContent <- sequenceA $ liftA2 highlightIO noteInfo noteContent
   pure $
     st
-      & #previewedNote .~ liftA2 highlight noteInfo noteContent
+      & #previewedNote .~ highlightedContent
       & #filteredNotes .~ filteredNotes
 
 data UIState = UIState

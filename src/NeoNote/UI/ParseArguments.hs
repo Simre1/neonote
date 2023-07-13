@@ -83,6 +83,7 @@ viewAction time =
         ( ViewNote
             <$> noteFilter time
             <*> noteAmount 1
+            <*> flag False True (long "plain" <> short 'p' <> help "Get plain output with no highlighting")
             <*> searchText
         )
         (progDesc "Filter notes and then view them")

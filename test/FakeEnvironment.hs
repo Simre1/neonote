@@ -7,21 +7,23 @@ import Effectful.Error.Dynamic
 import Effectful.State.Static.Local
 import Effectful.Writer.Dynamic (runWriterLocal, tell)
 import GHC.Generics (Generic)
+import NeoNote.Cache
 import NeoNote.Configuration (Configuration (..), GetConfiguration (..))
 import NeoNote.Data.Id (runMakeId)
 import NeoNote.Error
 import NeoNote.Log
+import NeoNote.Note.Highlight (runHighlight)
 import NeoNote.Run
+import NeoNote.Search (runNoteSearch)
 import NeoNote.Store.Database (runDatabase)
 import NeoNote.Store.Files (runFiles)
 import NeoNote.Store.Note (runNoteStore)
 import NeoNote.Time (runGetTime)
 import NeoNote.UI (runUI)
 import Optics.Core
-import System.Directory (doesDirectoryExist, getTemporaryDirectory, createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, getTemporaryDirectory)
 import System.FilePath (joinPath)
 import System.Random (randomRIO)
-import NeoNote.Search (runNoteSearch)
 
 runFakeIO :: FakeData -> Eff AppEffects a -> IO (FakeOutput a)
 runFakeIO fakeData eff = do
@@ -30,11 +32,13 @@ runFakeIO fakeData eff = do
       . runFakeConfiguration fakeData
       . runFakeLog
       . runFakeError
+      . runFakeCache
       . runFiles
       . runDatabase
       . runMakeId
       . runGetTime
       . runNoteStore
+      . runHighlight
       . runNoteSearch
       . runUI
       $ eff
@@ -91,3 +95,6 @@ runFakeLog :: Eff (Log : es) a -> Eff es (a, [Message])
 runFakeLog = reinterpret runWriterLocal $ \_ -> \case
   LogMessage message -> tell [message]
   _ -> error "not needed yet"
+
+runFakeCache :: Eff (Cache : es) a -> Eff es a
+runFakeCache = interpret $ \env (Cache _ _ compute) -> localSeqUnlift env $ \unlift -> unlift compute

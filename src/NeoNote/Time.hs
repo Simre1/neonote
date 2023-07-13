@@ -9,6 +9,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import Optics.Core
+import Data.Time.Clock (secondsToNominalDiffTime, addUTCTime)
 
 newtype Time = Time UTCTime deriving (Generic, Show, Eq, Ord)
 
@@ -53,6 +54,19 @@ timeOfDayFromString text = do
       & #hour ?~ h
       & #minute ?~ m
       & #seconds ?~ fromEnum s
+
+addSeconds :: Time -> Int -> Time
+addSeconds (Time t) seconds = Time $ addUTCTime (secondsToNominalDiffTime $ fromIntegral seconds) t
+
+
+addMinutes :: Time -> Int -> Time
+addMinutes t m = addSeconds t (m * 60)
+
+addHours :: Time -> Int -> Time
+addHours t hours = addMinutes t (hours * 60)
+
+addDays :: Time -> Int -> Time
+addDays t days = addMinutes t (days * 24)
 
 -- timeToTimeOfDay :: Time -> TimeOfDay
 -- timeToTimeOfDay time =

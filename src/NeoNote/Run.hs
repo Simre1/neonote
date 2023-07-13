@@ -19,8 +19,10 @@ import NeoNote.Time
 import NeoNote.UI
 import NeoNote.UI.Picker (PickedAction (..))
 import NeoNote.UI.Prompt
+import NeoNote.Note.Highlight (Highlight, runHighlightWithCache)
+import NeoNote.Cache
 
-type AppEffects = [UI, NoteSearch, NoteStore, GetTime, MakeId, Database, Files, Error NeoNoteError, Log, GetConfiguration, IOE]
+type AppEffects = [UI, NoteSearch, Highlight, NoteStore, GetTime, MakeId, Database, Files, Cache, Error NeoNoteError, Log, GetConfiguration, IOE]
 
 runNeoNote :: IO ()
 runNeoNote = runIO $ do
@@ -33,11 +35,13 @@ runIO =
     . injectConfiguration mempty
     . runLog
     . runNeoNoteError
+    . runCache
     . runFiles
     . runDatabase
     . runMakeId
     . runGetTime
     . runNoteStore
+    . runHighlightWithCache
     . runNoteSearch
     . runUI
 
@@ -47,7 +51,7 @@ handleAction action = case action of
   Action.EditNote noteFilter amount searchText -> runEditNoteAction noteFilter amount searchText
   Action.PickNote noteFilter searchText -> runPickNoteAction noteFilter searchText
   Action.DeleteNote noteFilter amount searchText -> runDeleteNoteAction noteFilter amount searchText
-  Action.ViewNote noteFilter amount searchText -> runViewNoteAction noteFilter amount searchText
+  Action.ViewNote noteFilter amount plain searchText -> runViewNoteAction noteFilter amount plain searchText
   Action.ListNotes noteFilter attributesToShow showAmount orderBy searchText ->
     runListNotesAction noteFilter searchText attributesToShow showAmount orderBy
   Action.ScanNotes -> runScanNotesAction
@@ -90,7 +94,7 @@ runPickNoteAction noteFilter searchTerm = do
       pure True
     (Just (PickedView noteInfo)) -> do
       noteContent <- readNote noteInfo
-      displayNote noteInfo noteContent
+      displayNote False noteInfo noteContent
       pure False
     _ -> False <$ logMessage NoMatchingNote
 
@@ -109,15 +113,15 @@ runDeleteNoteAction noteFilter amount searchTerm = do
       when answer $ do
         mapM_ deleteNote noteInfos
 
-runViewNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
-runViewNoteAction noteFilter amount searchTerm = do
+runViewNoteAction :: (UI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Bool -> Text -> Eff es ()
+runViewNoteAction noteFilter amount plain searchTerm = do
   selectedNotes <- take amount <$> searchNotes noteFilter searchTerm
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     noteInfos -> do
       forM_ noteInfos $ \noteInfo -> do
         noteContent <- readNote noteInfo
-        displayNote noteInfo noteContent
+        displayNote plain noteInfo noteContent
 
 runListNotesAction :: (UI :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 runListNotesAction noteFilter search noteAttributes showAmount orderBy = do

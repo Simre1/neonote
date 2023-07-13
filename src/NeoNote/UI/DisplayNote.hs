@@ -1,10 +1,16 @@
 module NeoNote.UI.DisplayNote where
-import NeoNote.Note.Note
-import Effectful
-import Data.Text.IO qualified as T
-import NeoNote.Note.Highlight (highlight)
 
-displayNoteInTerminal :: IOE :> es => NoteInfo -> NoteContent -> Eff es ()
-displayNoteInTerminal noteInfo noteContent = do
-  liftIO $ T.putStrLn $ highlight noteInfo noteContent
+import Data.Coerce (coerce)
+import Data.Text.IO qualified as T
+import Effectful
+import NeoNote.Note.Highlight (Highlight, highlight)
+import NeoNote.Note.Note
+
+displayNoteInTerminal :: (IOE :> es, Highlight :> es) => Bool -> NoteInfo -> NoteContent -> Eff es ()
+displayNoteInTerminal plain noteInfo noteContent = do
+  content <-
+    if not plain
+      then highlight noteInfo noteContent
+      else pure $ coerce noteContent
+  liftIO $ T.putStrLn content
   liftIO $ T.putStrLn ""
