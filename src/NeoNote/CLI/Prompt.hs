@@ -1,4 +1,4 @@
-module NeoNote.UI.Prompt where
+module NeoNote.CLI.Prompt where
 
 import Data.List.NonEmpty
 import Data.String.Interpolate (i)

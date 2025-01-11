@@ -1,4 +1,4 @@
-module NeoNote.UI.Editor where
+module NeoNote.CLI.Editor where
 
 import Control.Arrow (Arrow (first))
 import Control.Exception (catch, finally)

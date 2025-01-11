@@ -1,6 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use <$>" #-}
 module NeoNote.Note.Parse where
 
 import Control.Applicative ((<|>))

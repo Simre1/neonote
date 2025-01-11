@@ -11,8 +11,7 @@ import Effectful.Dispatch.Dynamic
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
 import NeoNote.Note.Note
-import NeoNote.Time (Time, addDays, timeFromString, timeToString)
-import Optics.Core
+import NeoNote.Time (GetTime, Time, addDays, getCurrentTime, timeFromString, timeToString)
 import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesFileExist, getXdgDirectory, removeDirectoryRecursive)
 import System.FilePath (joinPath)
 
@@ -25,23 +24,25 @@ data Cache :: Effect where
 
 makeEffect ''Cache
 
-runCache :: (GetConfiguration :> es, IOE :> es) => Eff (Cache : es) a -> Eff es a
+runCache :: (GetConfiguration :> es, IOE :> es, GetTime :> es) => Eff (Cache : es) a -> Eff es a
 runCache = interpret $ \env (Cache kind noteInfo computeItem) -> do
   notesPath <- getConfiguration #notesPath
-  do
-    cacheDir <- liftIO $ getXdgDirectory XdgCache "neonote"
-    liftIO $ createDirectoryIfMissing True cacheDir
-    let prefix = hash notesPath
-        fileName = [i|#{prefix}-#{noteIdToText $ noteInfo ^. #id}-#{T.replace " " "" $ timeToString $ noteInfo ^. #modified}-#{kind}|]
-        filePath = joinPath [cacheDir, fileName]
-    cachedHighlightExists <- liftIO $ doesFileExist filePath
-    if cachedHighlightExists
-      then do
-        liftIO $ readCacheItem filePath
-      else do
-        item <- localSeqUnlift env $ \unlift -> unlift computeItem
-        liftIO $ writeCacheItem filePath item
-        pure item
+  currentTime <- getCurrentTime
+  cacheDir <- liftIO $ getXdgDirectory XdgCache "neonote"
+  liftIO $ cleanCache currentTime cacheDir
+  let prefix = hash notesPath
+      modifiedString = T.replace " " "" $ timeToString $ noteInfo.modified
+      idString = noteIdToText $ noteInfo.id
+      fileName = [i|#{prefix}-#{idString}-#{modifiedString}-#{kind}|]
+      filePath = joinPath [cacheDir, fileName]
+  cachedHighlightExists <- liftIO $ doesFileExist filePath
+  if cachedHighlightExists
+    then do
+      liftIO $ readCacheItem filePath
+    else do
+      item <- localSeqUnlift env $ \unlift -> unlift computeItem
+      liftIO $ writeCacheItem filePath item
+      pure item
 
 cleanCache :: Time -> FilePath -> IO ()
 cleanCache currentTime cacheDir = do

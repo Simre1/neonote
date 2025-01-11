@@ -1,7 +1,6 @@
-module NeoNote.UI.DisplayNotes where
+module NeoNote.CLI.DisplayNotes where
 
 import Data.Coerce (coerce)
-import Data.Default
 import Data.List (sortBy)
 import Data.Text (Text, unpack)
 import Effectful
@@ -24,11 +23,12 @@ displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' =
 
   rows <- traverse makeNoteRows notesToDisplay
   let table =
-        tableString
-          ((makeColumn <$> noteAttributes) ++ [column (expandUntil 40) left def def])
-          unicodeS
-          (titlesH $ (makeTitle <$> noteAttributes) ++ ["content"])
-          rows
+        tableString $
+          columnHeaderTableS
+            ((makeColumn <$> noteAttributes) ++ [column (expandUntil 40) left def def])
+            unicodeS
+            (titlesH $ (makeTitle <$> noteAttributes) ++ ["content"])
+            rows
 
   if null notesToDisplay
     then logMessage NoMatchingNote
@@ -43,7 +43,7 @@ displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' =
       let attributeCells = attributeToCell noteInfo <$> noteAttributes
       noteContentCell <- getNoteContent noteInfo
       pure $ rowG $ attributeCells ++ [unpack $ noteContentPreview noteContentCell]
-    makeTitle AttributeId = "id"
+    makeTitle AttributeId = "id" :: Text
     makeTitle AttributeCreated = "created"
     makeTitle AttributeModified = "modified"
     makeTitle AttributeExtension = "extension"

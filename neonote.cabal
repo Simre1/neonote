@@ -1,4 +1,4 @@
-cabal-version:      3.0
+cabal-version:      3.14
 name:               neonote
 version:            0.1.0.0
 -- synopsis:
@@ -8,30 +8,55 @@ license-file:       LICENSE
 author:             Simre1
 maintainer:         simre4775@gmail.com
 -- copyright:
-build-type:         Simple
+build-type:         Hooks
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
+custom-setup
+  setup-depends:
+    base        >= 4.18 && < 5,
+    Cabal-hooks >= 3.14 && < 3.15,
+    Cabal-syntax,
+    process
+
 common common
     ghc-options: -Wall -threaded
-    default-language: GHC2021
+    default-language: GHC2024
     default-extensions:
         OverloadedLabels
         OverloadedStrings
+        OverloadedRecordDot
         TypeFamilies
-        LambdaCase
         DuplicateRecordFields
         NoFieldSelectors
         DataKinds
         TemplateHaskell
         QuasiQuotes
-
+    build-depends:
+        base ^>=4.17.0.0,
+        optics-core,
+        optics-extra,
+        containers,
+        vector,
+        bytestring,
+        text,
+        time,
+        directory,
+        filepath,
+        effectful,
+        effectful-th,
+        transformers,
+        random
+    -- extra-libraries-static: matcher
+    -- extra-bundled-libraries:     matcher
+    -- extra-lib-dirs: ${pkgroot}/matcher/target/debug
 library
     import:           common
     exposed-modules:  
         Data.List.SafeIndex
         Data.Functor.Empty
 
+        NeoNote.Run
         NeoNote.Search
         NeoNote.Note.Highlight
         NeoNote.Note.Note
@@ -42,38 +67,23 @@ library
         NeoNote.Store.Files
         NeoNote.Store.Note
         NeoNote.Cache
-        NeoNote.Run
         NeoNote.Configuration
         NeoNote.Actions
-        NeoNote.UI.ParseArguments
-        NeoNote.UI.Editor
-        NeoNote.UI.Picker
-        NeoNote.UI.Prompt
-        NeoNote.UI.DisplayNotes
-        NeoNote.UI.DisplayNote
-        NeoNote.UI
+        NeoNote.CLI.ParseArguments
+        NeoNote.CLI.Editor
+        NeoNote.CLI.Picker
+        NeoNote.CLI.Prompt
+        NeoNote.CLI.DisplayNotes
+        NeoNote.CLI.DisplayNote
+        NeoNote.CLI
         NeoNote.Time
         NeoNote.Log
         NeoNote.Error
-        Paths_neonote    
-    -- other-modules:
-    -- other-extensions:
+        Paths_neonote
+        
     build-depends:    
-        base ^>=4.17.0.0,
-        optics-core,
-        optics-extra,
-        containers,
-        vector,
-        bytestring,
-        text,
-        time,
-        random,
         sqlite-simple,
-        directory,
-        filepath,
-        effectful,
-        effectful-th,
-        string-interpolate,
+        string-interpolate >= 0.3.4,
         optparse-applicative,
         typed-process,
         fuzzy,
@@ -84,20 +94,31 @@ library
         table-layout,
         data-default,
         config-ini,
-        transformers,
         skylighting,
         pretty-terminal,
         hashable
         
     hs-source-dirs:   src
+    extra-libraries: matcher
+    includes: matcher/matcher.h
 
 executable neonote
+    import:           common
+    main-is:          Main.hs
+
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        neonote
+
+    hs-source-dirs:   app
+
+executable server
     import:           common
     main-is:          Main.hs
     -- other-modules:
     -- other-extensions:
     build-depends:
-        base ^>=4.17.0.0,
         neonote
 
     hs-source-dirs:   app
@@ -111,14 +132,6 @@ test-suite neonote-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        base ^>=4.17.0.0,
-        containers,
-        effectful,
-        optics-core,
-        text,
         neonote,
-        filepath,
-        directory,
-        random,
         tasty,
         tasty-hunit

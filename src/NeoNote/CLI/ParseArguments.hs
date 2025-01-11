@@ -1,6 +1,6 @@
 {-# LANGUAGE ApplicativeDo #-}
 
-module NeoNote.UI.ParseArguments where
+module NeoNote.CLI.ParseArguments where
 
 import Control.Monad (guard)
 import Data.Text (Text, unpack)
@@ -119,8 +119,10 @@ listAction time =
                   )
               )
             <*> noteAmount 8
-            <*> ( Ascending <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
-                    <|> Descending <$> option noteAttribute (value AttributeModified <> long "descending" <> help "Order notes by attribute in descending manner")
+            <*> ( Ascending
+                    <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
+                      <|> Descending
+                    <$> option noteAttribute (value AttributeModified <> long "descending" <> help "Order notes by attribute in descending manner")
                 )
             <*> searchText
         )
@@ -151,8 +153,13 @@ commandWithShortcut t a = command t a <> command [head t] a
 
 noteAttribute :: ReadM NoteAttribute
 noteAttribute =
-  AttributeId <$ maybeReader (guard . (\s -> s == "id" || s == "i"))
-    <|> AttributeCreated <$ maybeReader (guard . (\s -> s == "created" || s == "c"))
-    <|> AttributeModified <$ maybeReader (guard . (\s -> s == "modified" || s == "m"))
-    <|> AttributeExtension <$ maybeReader (guard . (\s -> s == "extension" || s == "e"))
-    <|> AttributeTags <$ maybeReader (guard . (\s -> s == "tags" || s == "t"))
+  AttributeId
+    <$ maybeReader (guard . (\s -> s == "id" || s == "i"))
+      <|> AttributeCreated
+    <$ maybeReader (guard . (\s -> s == "created" || s == "c"))
+      <|> AttributeModified
+    <$ maybeReader (guard . (\s -> s == "modified" || s == "m"))
+      <|> AttributeExtension
+    <$ maybeReader (guard . (\s -> s == "extension" || s == "e"))
+      <|> AttributeTags
+    <$ maybeReader (guard . (\s -> s == "tags" || s == "t"))

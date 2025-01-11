@@ -1,4 +1,4 @@
-module NeoNote.UI.Picker where
+module NeoNote.CLI.Picker where
 
 import Brick
 import Brick.AttrMap qualified as A
@@ -21,7 +21,7 @@ import GHC.Generics
 import Graphics.Vty qualified as Vty
 import NeoNote.Error
 import NeoNote.Log
-import NeoNote.Note.Highlight (highlight, Highlight)
+import NeoNote.Note.Highlight (Highlight, highlight)
 import NeoNote.Note.Note
 import NeoNote.Search
 import NeoNote.Store.Note
@@ -92,17 +92,20 @@ pickerApp noteSearchHandle highlightIO = defaultMain app
       (T.VtyEvent (Vty.EvKey Vty.KEnter [])) -> do
         modify $ \state ->
           state
-            & #result .~ (PickedEdit <$> selectedNoteInfo state)
+            & #result
+            .~ (PickedEdit <$> selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'x') [Vty.MCtrl])) -> do
         modify $ \state ->
           state
-            & #result .~ (PickedDelete <$> selectedNoteInfo state)
+            & #result
+            .~ (PickedDelete <$> selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'y') [Vty.MCtrl])) -> do
         modify $ \state ->
           state
-            & #result .~ (PickedView <$> selectedNoteInfo state)
+            & #result
+            .~ (PickedView <$> selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey Vty.KUp [])) -> do
         modify $ #position %~ max 0 . pred
@@ -129,8 +132,11 @@ pickerApp noteSearchHandle highlightIO = defaultMain app
           filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotes) (st ^. #noteFilter) (getSearchTerm st)
           put $
             st
-              & #filteredNotes .~ filteredNotes
-              & #position %~ max 0 . min (length filteredNotes - 1)
+              & #filteredNotes
+              .~ filteredNotes
+              & #position
+              %~ max 0
+              . min (length filteredNotes - 1)
 
 selectedAttr :: A.AttrName
 selectedAttr = attrName "selected"
@@ -156,8 +162,10 @@ refreshNotes noteSearchHandle highlightIO st = do
   highlightedContent <- sequenceA $ liftA2 highlightIO noteInfo noteContent
   pure $
     st
-      & #previewedNote .~ highlightedContent
-      & #filteredNotes .~ filteredNotes
+      & #previewedNote
+      .~ highlightedContent
+      & #filteredNotes
+      .~ filteredNotes
 
 data UIState = UIState
   { filteredNotes :: [NoteInfo],

@@ -1,4 +1,4 @@
 packages: neonote.cabal
 
-allow-newer: base
+allow-newer: base, template-haskell
 

@@ -1,4 +1,4 @@
-module NeoNote.UI.DisplayNote where
+module NeoNote.CLI.DisplayNote where
 
 import Data.Coerce (coerce)
 import Data.Text.IO qualified as T
