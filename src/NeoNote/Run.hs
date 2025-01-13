@@ -1,7 +1,8 @@
 module NeoNote.Run where
 
 import Control.Monad (forM_, when)
-import Data.List.NonEmpty as NE (NonEmpty (..), fromList, zip)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
 import Effectful
 import Effectful.Error.Dynamic
@@ -18,18 +19,14 @@ import NeoNote.Note.Highlight (Highlight, runHighlightWithCache)
 import NeoNote.Note.Note
 import NeoNote.Search
 import NeoNote.Store.Database (Database, runDatabase)
-import NeoNote.Store.Files (Files, runFiles)
 import NeoNote.Store.Note
 import NeoNote.Time
+import Optics.Core
 
-
-foreign import ccall "hello" hello :: IO ()
-
-type AppEffects = [CLI, NoteSearch, Highlight, NoteStore, MakeId, Database, Files, Cache, GetTime, Error NeoNoteError, Log, GetConfiguration, IOE]
+type AppEffects = [CLI, NoteSearch, Highlight, NoteStore, MakeId, Database, Cache, GetTime, Error NeoNoteError, Log, GetConfiguration, IOE]
 
 runNeoNote :: IO ()
 runNeoNote = do
-  hello
   runIO $ do
     action <- getActionFromArguments
     handleAction action
@@ -42,7 +39,6 @@ runIO =
     . runNeoNoteError
     . runGetTime
     . runCache
-    . runFiles
     . runDatabase
     . runMakeId
     . runNoteStore
@@ -68,7 +64,7 @@ runCreateNoteAction initialText skipEditor = do
     (noteContent :| _) <-
       if skipEditor
         then pure $ pure initialNoteContent
-        else editor $ pure (noteInfo, initialNoteContent)
+        else editor $ pure $ Note noteInfo initialNoteContent
     pure noteContent
 
 runEditNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Text -> Eff es ()
@@ -78,8 +74,9 @@ runEditNoteAction noteFilter amount searchTerm = do
     [] -> logMessage NoMatchingNote
     (a : as) -> do
       let noteInfos = a :| as
-      noteContents <- traverse readNote noteInfos
-      newNoteContents <- editor $ NE.zip noteInfos noteContents
+          noteIds = noteInfos ^. mapping #id
+      notes <- traverse readNote noteIds
+      newNoteContents <- editor notes
 
       forM_ (NE.zip noteInfos newNoteContents) $ uncurry writeNote
 
@@ -87,19 +84,19 @@ runPickNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log 
 runPickNoteAction noteFilter searchTerm = do
   pick noteFilter searchTerm $ \case
     (Just (PickedEdit noteInfo)) -> do
-      noteContent <- readNote noteInfo
-      (newNoteContent :| _) <- editor $ pure (noteInfo, noteContent)
+      note <- readNote (noteInfo ^. #id)
+      (newNoteContent :| _) <- editor $ pure note
       writeNote noteInfo newNoteContent
       pure False
     (Just (PickedDelete noteInfo)) -> do
-      noteContent <- readNote noteInfo
-      answer <- prompt (AreYouSureDeletion ((noteInfo, noteContent) :| []))
+      note <- readNote (noteInfo ^. #id)
+      answer <- prompt (AreYouSureDeletion (note :| []))
       when answer $ do
-        deleteNote noteInfo
+        deleteNote (noteInfo ^. #id)
       pure True
     (Just (PickedView noteInfo)) -> do
-      noteContent <- readNote noteInfo
-      displayNote False noteInfo noteContent
+      note <- readNote (noteInfo ^. #id)
+      displayNote False note
       pure False
     _ -> False <$ logMessage NoMatchingNote
 
@@ -109,14 +106,14 @@ runDeleteNoteAction noteFilter amount searchTerm = do
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     noteInfos -> do
-      noteContents <- traverse readNote noteInfos
+      notes <- traverse readNote (noteInfos ^. mapping #id)
       answer <-
         prompt
           ( AreYouSureDeletion
-              (NE.fromList $ Prelude.zip noteInfos noteContents)
+              (NE.fromList notes)
           )
       when answer $ do
-        mapM_ deleteNote noteInfos
+        mapM_ deleteNote (noteInfos ^. mapping #id)
 
 runViewNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, NoteSearch :> es) => NoteFilter -> Int -> Bool -> Text -> Eff es ()
 runViewNoteAction noteFilter amount plain searchTerm = do
@@ -125,8 +122,8 @@ runViewNoteAction noteFilter amount plain searchTerm = do
     [] -> logMessage NoMatchingNote
     noteInfos -> do
       forM_ noteInfos $ \noteInfo -> do
-        noteContent <- readNote noteInfo
-        displayNote plain noteInfo noteContent
+        note <- readNote (noteInfo ^. #id)
+        displayNote plain note
 
 runListNotesAction :: (CLI :> es, Error NeoNoteError :> es) => NoteFilter -> Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 runListNotesAction noteFilter search noteAttributes showAmount orderBy = do

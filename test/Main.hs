@@ -1,18 +1,18 @@
 module Main (main) where
 
+import Control.Concurrent (threadDelay)
+import Control.Monad.IO.Class (MonadIO (..))
 import Data.Set qualified as S (fromList)
 import FakeEnvironment
 import NeoNote.Actions qualified as Action
 import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Run (handleAction)
-import NeoNote.Time
 import NeoNote.Store.Note
+import NeoNote.Time
 import Optics.Core
 import Test.Tasty
 import Test.Tasty.HUnit
-import Control.Concurrent (threadDelay)
-import Control.Monad.IO.Class (MonadIO(..))
 
 main :: IO ()
 main =
@@ -59,8 +59,8 @@ createMultipleNotes = testCase "Multiple notes" $ do
     handleAction (Action.CreateNote False "")
     handleAction (Action.CreateNote False "test")
     noteIds <- findNotes EveryNote
-    noteInfos <- traverse getNoteInfo noteIds
-    S.fromList <$> traverse readNote noteInfos
+    notes <- traverse readNote noteIds
+    pure $ S.fromList $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated, NoteCreated, NoteCreated]
   case fakeOutput ^. #output of
@@ -74,10 +74,10 @@ editSingleNote = testCase "Single note" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "test")
     handleAction (Action.EditNote EveryNote 1 "")
-  
+
     noteIds <- findNotes EveryNote
-    noteInfos <- traverse getNoteInfo noteIds
-    traverse readNote noteInfos
+    notes <- traverse readNote noteIds
+    pure $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated, NoteEdited]
   case fakeOutput ^. #output of
@@ -91,8 +91,8 @@ singleTag = testCase "Single tag" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "#test")
     noteIds <- findNotes (HasTag (Tag "test"))
-    noteInfos <- traverse getNoteInfo noteIds
-    traverse readNote noteInfos
+    notes <- traverse readNote noteIds
+    pure $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated]
   case fakeOutput ^. #output of
@@ -106,8 +106,8 @@ hyphenatedTag = testCase "Hyphenated tag" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "#test-tag")
     noteIds <- findNotes (HasTag (Tag "test-tag"))
-    noteInfos <- traverse getNoteInfo noteIds
-    traverse readNote noteInfos
+    notes <- traverse readNote noteIds
+    pure $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated]
   case fakeOutput ^. #output of
@@ -144,7 +144,7 @@ updateTagAfterEdit = testCase "Update tag after edit" $ do
 
     noteIds <- findNotes (HasTag (Tag "test"))
     pure $ length noteIds
-    
+
   fakeOutput ^. #logs @?= [NoteCreated, NoteEdited]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
@@ -157,7 +157,7 @@ after2020 = testCase "After 2020" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "test")
 
-    noteIds <- findNotes (AfterDate DateLiteralCreated (DateLiteral (mempty & #year ?~ 2020 )))
+    noteIds <- findNotes (AfterDate DateLiteralCreated (DateLiteral (mempty & #year ?~ 2020)))
 
     pure $ length noteIds
 
@@ -179,7 +179,7 @@ modificationChangesDate = testCase "Modification changes date" $ do
     liftIO $ threadDelay 1000000
 
     mapM_ (`writeNote` NoteContent "new content") unmodifiedNoteInfos
-    
+
     modifiedNoteIds <- findNotes (BeforeDate DateLiteralCreated DateLiteralModified)
 
     pure $ length <$> [unmodifiedNoteIds, modifiedNoteIds]
@@ -187,6 +187,6 @@ modificationChangesDate = testCase "Modification changes date" $ do
   fakeOutput ^. #logs @?= [NoteCreated, NoteEdited]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
-    Right a -> a @?= [1,1]
+    Right a -> a @?= [1, 1]
   where
     fakeData = FakeData {defaultExtension = "md", editorWrites = []}

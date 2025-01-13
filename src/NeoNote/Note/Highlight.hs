@@ -14,7 +14,7 @@ data Highlight :: Effect where
 makeEffect ''Highlight
 
 runHighlightWithCache :: (Cache :> es) => Eff (Highlight : es) a -> Eff es a
-runHighlightWithCache = interpret $ \_ (Highlight noteInfo noteContent) -> do
+runHighlightWithCache = interpret $ \_ (Highlight _noteInfo noteContent) -> do
   -- traceShowId <$> cache "highlight" noteInfo (pure $ highlightNoteContent noteInfo noteContent)
   pure $ coerce noteContent
 
@@ -24,4 +24,4 @@ runHighlight = interpret $ \_ (Highlight noteInfo noteContent) ->
     highlightNoteContent noteInfo noteContent
 
 highlightNoteContent :: NoteInfo -> NoteContent -> Text
-highlightNoteContent noteInfo noteContent = coerce noteContent
+highlightNoteContent _noteInfo noteContent = coerce noteContent

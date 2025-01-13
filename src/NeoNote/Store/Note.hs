@@ -17,42 +17,42 @@ data NoteStore :: Effect where
   NoteExists :: NoteId -> NoteStore m Bool
   FindNotes :: NoteFilter -> NoteStore m [NoteId]
   WriteNote :: NoteInfo -> NoteContent -> NoteStore m ()
-  ReadNote :: NoteInfo -> NoteStore m NoteContent
-  DeleteNote :: NoteInfo -> NoteStore m ()
+  ReadNote :: NoteId -> NoteStore m Note
+  DeleteNote :: NoteId -> NoteStore m ()
   GetNoteInfo :: NoteId -> NoteStore m NoteInfo
   CreateNote :: (NoteInfo -> m NoteContent) -> NoteStore m ()
 
 makeEffect ''NoteStore
 
-runNoteStore :: (Database :> es, Files :> es, GetTime :> es, GetConfiguration :> es, MakeId :> es, Log :> es) => Eff (NoteStore : es) a -> Eff es a
+runNoteStore :: (Database :> es, GetTime :> es, GetConfiguration :> es, MakeId :> es, Log :> es) => Eff (NoteStore : es) a -> Eff es a
 runNoteStore = interpret $ \env -> \case
   NoteExists noteId -> runNoteExists noteId
   FindNotes noteFilter -> runFindNotes noteFilter
   WriteNote noteInfo noteContent -> runWriteNote noteInfo noteContent
-  ReadNote noteInfo -> runReadNote noteInfo
-  DeleteNote noteInfo -> runDeleteNote noteInfo
+  ReadNote noteId -> runReadNote noteId
+  DeleteNote noteId -> runDeleteNote noteId
   GetNoteInfo noteId -> runGetNoteInfo noteId
   CreateNote f -> runCreateNote env f
 
-runNoteExists :: (Database :> es, Files :> es) => NoteId -> Eff es Bool
+runNoteExists :: (Database :> es) => NoteId -> Eff es Bool
 runNoteExists = dbNoteExists
 
-runFindNotes :: (Database :> es, Files :> es) => NoteFilter -> Eff es [NoteId]
+runFindNotes :: (Database :> es) => NoteFilter -> Eff es [NoteId]
 runFindNotes = dbFindNotes
 
-runWriteNote :: (Log :> es, Database :> es, Files :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
+runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
 runWriteNote noteInfo noteContent = do
   if hasContent noteContent
     then do
-      oldNoteContent <- filesReadNote noteInfo
-      if oldNoteContent /= noteContent
+      oldNote <- dbGetNote (noteInfo ^. #id)
+      if oldNote ^. #content /= noteContent
         then do
           runWriteNoteNoLogging noteInfo noteContent
           logMessage NoteEdited
         else logMessage NoteUnchanged
     else logMessage NoteEmpty
 
-runWriteNoteNoLogging :: (GetTime :> es, Files :> es, Database :> es) => NoteInfo -> NoteContent -> Eff es ()
+runWriteNoteNoLogging :: (GetTime :> es, Database :> es) => NoteInfo -> NoteContent -> Eff es ()
 runWriteNoteNoLogging noteInfo noteContent = do
   let tags = extractTags noteContent
   currentTime <- getCurrentTime
@@ -61,27 +61,25 @@ runWriteNoteNoLogging noteInfo noteContent = do
           { tags = tags,
             modified = currentTime
           }
-  filesWriteNote updatedNoteInfo noteContent
-  dbWriteNoteInfo updatedNoteInfo
+  dbWriteNote (Note updatedNoteInfo noteContent)
 
-runReadNote :: (Database :> es, Files :> es) => NoteInfo -> Eff es NoteContent
-runReadNote = filesReadNote
+runReadNote :: (Database :> es) => NoteId -> Eff es Note
+runReadNote = dbGetNote
 
-runDeleteNote :: (Database :> es, Files :> es) => NoteInfo -> Eff es ()
-runDeleteNote noteInfo = do
-  dbDeleteNote $ noteInfo ^. #id
-  filesDeleteNote noteInfo
+runDeleteNote :: (Database :> es) => NoteId -> Eff es ()
+runDeleteNote noteId = do
+  dbDeleteNote noteId
 
-runGetNoteInfo :: (Database :> es, Files :> es) => NoteId -> Eff es NoteInfo
+runGetNoteInfo :: (Database :> es) => NoteId -> Eff es NoteInfo
 runGetNoteInfo = dbGetNoteInfo
 
-runCreateNote :: (Database :> es, Files :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs NoteContent) -> Eff es ()
+runCreateNote :: (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs NoteContent) -> Eff es ()
 runCreateNote env getNoteContent = do
   noteInfo <- makeNewNoteInfo
   noteContent <- localSeqUnlift env $ \unlift -> unlift $ getNoteContent noteInfo
   if hasContent noteContent
     then do
-      runWriteNoteNoLogging noteInfo noteContent  
+      runWriteNoteNoLogging noteInfo noteContent
       logMessage NoteCreated
     else do
       logMessage NoteEmpty

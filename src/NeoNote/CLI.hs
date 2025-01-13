@@ -24,11 +24,11 @@ import NeoNote.Time
 
 data CLI :: Effect where
   GetActionFromArguments :: CLI m Action
-  Editor :: NonEmpty (NoteInfo, NoteContent) -> CLI m (NonEmpty NoteContent)
+  Editor :: NonEmpty Note -> CLI m (NonEmpty NoteContent)
   Pick :: NoteFilter -> Text -> (Maybe PickedAction -> m Bool) -> CLI m ()
   Prompt :: Prompt a -> CLI m a
   DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> CLI m ()
-  DisplayNote :: Bool -> NoteInfo -> NoteContent -> CLI m ()
+  DisplayNote :: Bool -> Note -> CLI m ()
 
 makeEffect ''CLI
 
@@ -42,4 +42,4 @@ runCLI = interpret $ \env uiEffect -> do
     Prompt promptType -> askPrompt promptType
     DisplayNotes noteFilter search orderBy displayAmount noteAttributes ->
       displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
-    DisplayNote plain noteInfo noteContent -> displayNoteInTerminal plain noteInfo noteContent
+    DisplayNote plain note -> displayNoteInTerminal plain note

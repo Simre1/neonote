@@ -1,4 +1,4 @@
-module NeoNote.Store.Files where
+module NeoNote.Store.Files () where
 
 import Control.Exception (SomeException, catch)
 import Data.Coerce (coerce)

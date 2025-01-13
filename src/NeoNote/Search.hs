@@ -14,10 +14,10 @@ import GHC.Generics (Generic)
 import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Note
+import Optics.Core
 import Text.Fuzzy qualified as Fuzzy
 
 data NoteSearch :: Effect where
-  GetNoteContent :: NoteInfo -> NoteSearch m NoteContent
   SearchNotes :: NoteFilter -> Text -> NoteSearch m [NoteInfo]
   SearchNotesNoCache :: NoteFilter -> Text -> NoteSearch m [NoteInfo]
 
@@ -36,9 +36,6 @@ runNoteSearch eff = do
 
   interpret
     ( \_ -> \case
-        GetNoteContent noteInfo -> do
-          noteMap <- liftIO $ snd <$> readIORef currentlyFilteredNotes
-          pure $ fromMaybe (NoteContent "This note id is not one that's currently in the search.") $ M.lookup noteInfo noteMap
         SearchNotes noteFilter text -> do
           (cachedNoteFilter, cachedNotes) <- liftIO $ readIORef currentlyFilteredNotes
 
@@ -48,8 +45,8 @@ runNoteSearch eff = do
               else do
                 noteIds <- findNotes noteFilter
                 noteInfos <- traverse getNoteInfo noteIds
-                noteContents <- traverse readNote noteInfos
-                let notesMap = M.fromList $ zip noteInfos noteContents
+                notes <- traverse readNote noteIds
+                let notesMap = M.fromList $ zip noteInfos (notes ^. mapping #content)
                 liftIO $ writeIORef currentlyFilteredNotes (noteFilter, notesMap)
                 pure notesMap
 
@@ -58,8 +55,8 @@ runNoteSearch eff = do
           notes <- do
             noteIds <- findNotes noteFilter
             noteInfos <- traverse getNoteInfo noteIds
-            noteContents <- traverse readNote noteInfos
-            let notesMap = M.fromList $ zip noteInfos noteContents
+            notes <- traverse readNote noteIds
+            let notesMap = M.fromList $ zip noteInfos (notes ^. mapping #content)
             liftIO $ writeIORef currentlyFilteredNotes (noteFilter, notesMap)
             pure notesMap
 
@@ -71,12 +68,12 @@ runNoteSearch eff = do
       EQ -> orderNote AttributeModified (fst $ Fuzzy.original fuzzy1) (fst $ Fuzzy.original fuzzy2)
       ordering -> ordering
 
-withNoteSearchHandle :: (NoteSearch :> es, IOE :> es) => (NoteSearchHandle -> IO a) -> Eff es a
+withNoteSearchHandle :: (NoteSearch :> es, IOE :> es, NoteStore :> es) => (NoteSearchHandle -> IO a) -> Eff es a
 withNoteSearchHandle f = do
   withRunInIO $ \unlift ->
     f $
       NoteSearchHandle
-        { getNoteContent = unlift . getNoteContent,
+        { getNoteContent = unlift . fmap (^. #content) . readNote . (^. #id),
           searchNotes = \noteFilter search -> unlift $ searchNotes noteFilter search,
           searchNotesNoCache = \noteFilter search -> unlift $ searchNotesNoCache noteFilter search
         }

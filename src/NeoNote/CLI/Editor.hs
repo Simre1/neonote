@@ -19,12 +19,12 @@ import System.FilePath (joinPath)
 import System.Process.Typed
 import System.Random (randomRIO)
 
-runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty (NoteInfo, NoteContent) -> Eff es (NonEmpty NoteContent)
+runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty Note -> Eff es (NonEmpty NoteContent)
 runEditor notes = do
   editorCommandTemplate <- getConfiguration #editor
   suffix <- pack . show <$> randomRIO @Int (10000, 99999)
   let fileName noteInfo = suffix <> "-" <> noteFileName noteInfo
-  let files = first fileName <$> notes
+  let files = (\(Note noteInfo noteContent) -> (fileName noteInfo, noteContent)) <$> notes
   withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommandTemplate files) $ \e -> do
     unlift $ throwError $ EditingCrashed e
 

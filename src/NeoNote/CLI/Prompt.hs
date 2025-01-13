@@ -11,13 +11,13 @@ import NeoNote.Time (timeToString)
 import Optics.Core
 
 data Prompt a where
-  AreYouSureDeletion :: NonEmpty (NoteInfo, NoteContent) -> Prompt Bool
+  AreYouSureDeletion :: NonEmpty Note -> Prompt Bool
 
 promptQuestion :: Prompt a -> Text
 promptQuestion (AreYouSureDeletion notes) = [i|Do you really want to delete the following notes :\n#{foldMap notesText notes}|]
   where
-    notesText :: (NoteInfo, NoteContent) -> Text
-    notesText (noteInfo, noteContent) = [i|- #{timeToString $ noteInfo ^. #modified}: #{noteContentPreview noteContent}\n|]
+    notesText :: Note -> Text
+    notesText (Note noteInfo noteContent) = [i|- #{timeToString $ noteInfo ^. #modified}: #{noteContentPreview noteContent}\n|]
 
 askConfirmation :: (IOE :> es) => Eff es Bool
 askConfirmation = do

@@ -17,7 +17,6 @@ import NeoNote.Note.Highlight (runHighlight)
 import NeoNote.Run
 import NeoNote.Search (runNoteSearch)
 import NeoNote.Store.Database (runDatabase)
-import NeoNote.Store.Files (runFiles)
 import NeoNote.Store.Note (runNoteStore)
 import NeoNote.Time (runGetTime)
 import Optics.Core
@@ -34,7 +33,6 @@ runFakeIO fakeData eff = do
       . runFakeError
       . runGetTime
       . runFakeCache
-      . runFiles
       . runDatabase
       . runMakeId
       . runNoteStore

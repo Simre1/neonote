@@ -46,6 +46,11 @@ data NoteInfo = NoteInfo
   }
   deriving (Generic, Eq, Ord, Show)
 
+data Note = Note {
+  info :: NoteInfo,
+  content :: NoteContent
+} deriving (Generic, Eq, Ord, Show)
+
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
 
 data NoteAttribute

@@ -10,7 +10,7 @@ import NeoNote.Error (NeoNoteError)
 import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Search
-import NeoNote.Store.Note (NoteStore)
+import NeoNote.Store.Note (NoteStore, readNote)
 import NeoNote.Time
 import Optics.Core
 import Text.Layout.Table
@@ -41,8 +41,8 @@ displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' =
     makeColumn _ = def
     makeNoteRows noteInfo = do
       let attributeCells = attributeToCell noteInfo <$> noteAttributes
-      noteContentCell <- getNoteContent noteInfo
-      pure $ rowG $ attributeCells ++ [unpack $ noteContentPreview noteContentCell]
+      note <- readNote (noteInfo ^. #id)
+      pure $ rowG $ attributeCells ++ [unpack $ noteContentPreview (note ^. #content)]
     makeTitle AttributeId = "id" :: Text
     makeTitle AttributeCreated = "created"
     makeTitle AttributeModified = "modified"

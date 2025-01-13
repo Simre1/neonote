@@ -1,4 +1,4 @@
-cabal-version:      3.14
+cabal-version:      3.12
 name:               neonote
 version:            0.1.0.0
 -- synopsis:
@@ -8,7 +8,7 @@ license-file:       LICENSE
 author:             Simre1
 maintainer:         simre4775@gmail.com
 -- copyright:
-build-type:         Hooks
+build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
@@ -47,9 +47,6 @@ common common
         effectful-th,
         transformers,
         random
-    -- extra-libraries-static: matcher
-    -- extra-bundled-libraries:     matcher
-    -- extra-lib-dirs: ${pkgroot}/matcher/target/debug
 library
     import:           common
     exposed-modules:  
@@ -99,8 +96,8 @@ library
         hashable
         
     hs-source-dirs:   src
-    extra-libraries: matcher
-    includes: matcher/matcher.h
+    -- extra-libraries: matcher
+    -- includes: matcher/matcher.h
 
 executable neonote
     import:           common

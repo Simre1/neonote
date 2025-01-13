@@ -25,6 +25,8 @@ import System.FilePath (joinPath)
 data Database :: Effect where
   DbGetNoteInfo :: NoteId -> Database m NoteInfo
   DbWriteNoteInfo :: NoteInfo -> Database m ()
+  DbWriteNote :: Note -> Database m ()
+  DbGetNote :: NoteId -> Database m Note
   DbFindNotes :: NoteFilter -> Database m [NoteId]
   DbNoteExists :: NoteId -> Database m Bool
   DbDeleteNote :: NoteId -> Database m ()
@@ -44,6 +46,8 @@ runDatabase eff = do
           ( \_ databaseEffect -> case databaseEffect of
               DbNoteExists noteId -> handleNoteExists connection noteId
               DbWriteNoteInfo noteInfo -> handleWriteNoteInfo connection noteInfo
+              DbWriteNote note -> handleWriteNote connection note
+              DbGetNote note -> handleGetNote connection note
               DbGetNoteInfo noteId -> handleGetNoteInfo connection noteId
               DbFindNotes notesFilter -> handleFindNotes connection notesFilter
               DbDeleteNote noteId -> handleDBDeleteNote connection noteId
@@ -53,7 +57,7 @@ runDatabase eff = do
     newParam :: Text -> State [DB.NamedParam] Text
     newParam input = do
       params <- get
-      let paramName = pack $ (":namedparam"++) $ show $ length params
+      let paramName = pack $ (":namedparam" ++) $ show $ length params
       modify ((paramName DB.:= input) :)
       pure paramName
 
@@ -210,6 +214,82 @@ runDatabase eff = do
       forM results $ \(DB.Only matchedNoteId) ->
         maybe (throwError $ CorruptedNoteId matchedNoteId) pure $ noteIdFromText matchedNoteId
 
+    handleWriteNote :: DB.Connection -> Note -> Eff es' ()
+    handleWriteNote connection (Note noteInfo (NoteContent noteContent)) =
+      liftIO $ DB.withTransaction connection $ do
+        DB.execute
+          connection
+          [__i|  
+            insert or replace into notes (id, extension, created, modified, content) 
+            values (?,?,?,?,?)
+          |]
+          ( noteIdToText (noteInfo ^. #id),
+            noteInfo ^. #extension,
+            timeToString $ noteInfo ^. #created,
+            timeToString $ noteInfo ^. #modified,
+            noteContent
+          )
+        DB.execute
+          connection
+          [__i|  
+            delete from tags
+            where noteId = ?
+          |]
+          (DB.Only $ noteIdToText (noteInfo ^. #id))
+        forM_ (noteInfo ^. #tags) $ \tag ->
+          DB.execute
+            connection
+            [__i|
+              insert into tags (noteId, tag)
+              values (?,?)
+            |]
+            (noteIdToText (noteInfo ^. #id), coerce @_ @Text tag)
+
+    handleGetNote :: DB.Connection -> NoteId -> Eff es' Note
+    handleGetNote connection noteId = do
+      resultsNotes <-
+        liftIO $
+          DB.query
+            connection
+            [__i|
+              select extension, created, modified, content from
+                (select id, extension, created, modified, content from notes
+                where id = ?)
+            |]
+            (DB.Only $ noteIdToText noteId)
+      resultsTags <-
+        liftIO $
+          DB.query
+            connection
+            [__i|
+              select tag from
+                (select noteId, tag from tags
+                where noteId = ?)
+            |]
+            (DB.Only $ noteIdToText noteId)
+      case resultsNotes of
+        [] -> throwError (MissingNoteId noteId)
+        [(extension, createdText, modifiedText, noteContent)] -> do
+          created <-
+            maybe (throwError $ InvalidDateFormat noteId createdText) pure $
+              timeFromString createdText
+          modified <-
+            maybe (throwError $ InvalidDateFormat noteId modifiedText) pure $
+              timeFromString modifiedText
+          pure $
+            Note
+              { info =
+                  NoteInfo
+                    { id = noteId,
+                      tags = S.fromList $ Tag . (\(DB.Only tagText) -> tagText) <$> resultsTags,
+                      created = created,
+                      modified = modified,
+                      extension = extension
+                    },
+                content = NoteContent noteContent
+              }
+        _ -> throwError (TooManyResults noteId)
+
     checkTableVersion :: DB.Connection -> IO (Maybe DatabaseError)
     checkTableVersion connection = DB.withTransaction connection $ do
       versionResults <- DB.query_ connection [__i| select tableVersion from config|]
@@ -220,14 +300,21 @@ runDatabase eff = do
         [DB.Only tableVersion] ->
           if tableVersion == currentVersion
             then pure Nothing
-            else pure $ Just $ IncompatibleTableVersion currentVersion tableVersion
+            else do
+              migrate tableVersion currentVersion
+              pure $ Just $ IncompatibleTableVersion currentVersion tableVersion
         _ -> pure $ Just $ CorruptedTable "versions"
       where
         currentVersion :: Int
-        currentVersion = 1
+        currentVersion = 2
+        migrate :: Int -> Int -> IO ()
+        migrate 1 2 = do
+          putStrLn "Automatic migration not yet possible."
+          putStrLn "You need to upload all notes manually:\n1. Backup notes\n2. Delete notes folder\n3. Within notes backup: nn upload *"
+        migrate _ _ = error "Weird versions"
 
 tables :: [DB.Query]
-tables = [noteTable, tagTable, configTable]
+tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, tagTable, configTable]
   where
     noteTable :: DB.Query
     noteTable =
@@ -236,7 +323,8 @@ tables = [noteTable, tagTable, configTable]
           (id TEXT PRIMARY KEY NOT NULL,
           extension TEXT NOT NULL,
           created TEXT NOT NULL,
-          modified TEXT NOT NULL
+          modified TEXT NOT NULL,
+          content TEXT
           )
       |]
     tagTable :: DB.Query

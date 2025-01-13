@@ -6,7 +6,6 @@ import Brick.Main qualified as M
 import Brick.Types qualified as T
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.Edit qualified as E
-import Control.Applicative (Applicative (..))
 import Control.Exception (catch)
 import Control.Monad (when)
 import Data.Coerce (coerce)
