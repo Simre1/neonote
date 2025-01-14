@@ -1,10 +1,11 @@
-module NeoNote.Search where
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
+module NeoNote.Search () where
 
 import Data.Coerce (coerce)
 import Data.IORef
 import Data.List (sortBy)
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Effectful
 import Effectful.Dispatch.Dynamic
@@ -44,7 +45,7 @@ runNoteSearch eff = do
               then pure cachedNotes
               else do
                 noteIds <- findNotes noteFilter
-                noteInfos <- traverse getNoteInfo noteIds
+                noteInfos <- traverse readNoteInfo noteIds
                 notes <- traverse readNote noteIds
                 let notesMap = M.fromList $ zip noteInfos (notes ^. mapping #content)
                 liftIO $ writeIORef currentlyFilteredNotes (noteFilter, notesMap)
@@ -54,7 +55,7 @@ runNoteSearch eff = do
         SearchNotesNoCache noteFilter text -> do
           notes <- do
             noteIds <- findNotes noteFilter
-            noteInfos <- traverse getNoteInfo noteIds
+            noteInfos <- traverse readNoteInfo noteIds
             notes <- traverse readNote noteIds
             let notesMap = M.fromList $ zip noteInfos (notes ^. mapping #content)
             liftIO $ writeIORef currentlyFilteredNotes (noteFilter, notesMap)

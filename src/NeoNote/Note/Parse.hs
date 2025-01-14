@@ -9,6 +9,7 @@ import Data.Text qualified as T
 import Data.Void (Void)
 import NeoNote.Note.Note
 import NeoNote.Time
+import Text.Megaparsec (choice)
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
@@ -26,7 +27,10 @@ extractTags (NoteContent noteContent) =
 type Parser = P.Parsec Void Text
 
 lexeme :: Parser a -> Parser a
-lexeme = P.lexeme $ void $ P.takeWhileP (Just "Whitespace") (<= ' ')
+lexeme = P.lexeme $ whitespace
+
+whitespace :: Parser ()
+whitespace = void $ P.takeWhileP (Just "Whitespace") (<= ' ')
 
 parseNoteFilter :: Time -> Text -> Either Text NoteFilter
 parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parser "note filter string"
@@ -34,6 +38,7 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
     parser :: Parser NoteFilter
     parser = do
       let tagP = P.try $ do
+            _ <- P.char '#'
             tagString <- lexeme $ P.takeWhile1P (Just "Tag") (`S.member` tagCharacters)
             guard $ T.head tagString /= '-'
             guard $ T.last tagString /= '-'
@@ -44,6 +49,19 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
             operation <- lexeme $ EqualDate <$ P.char '=' <|> AfterDate <$ P.char '>' <|> BeforeDate <$ P.char '<'
             d2 <- dateParser currentTime
             pure $ operation d1 d2
+          containsP =
+            choice
+              [ lexeme $
+                  do
+                    _ <- P.char '\"'
+                    f <- lexeme $ P.takeWhile1P (Just "Quoted Search fragment") (> ' ')
+                    _ <- P.char '\"'
+                    pure $ Contains f,
+                fmap
+                  Contains
+                  $ lexeme
+                  $ P.takeWhile1P (Just "Search fragment") (> ' ')
+              ]
           notP = lexeme $ P.char '~' >> Not <$> combinedP
           everynoteP = lexeme $ EveryNote <$ P.string "*"
           bracketsP = lexeme $ do
@@ -51,12 +69,19 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
             p <- combinedP
             _ <- P.char ')'
             pure p
-          andOrP = chainl1 nonLeftRecursiveP (lexeme $ And <$ P.char '&' <|> Or <$ P.char '|')
-          nonLeftRecursiveP = bracketsP <|> tagP <|> everynoteP <|> notP <|> timeP
+          andOrP = chainl1 nonLeftRecursiveP (lexeme $ And <$ P.char '&' <|> Or <$ P.char '|' <|> pure Together)
+          nonLeftRecursiveP = bracketsP <|> tagP <|> everynoteP <|> notP <|> timeP <|> containsP
           combinedP = andOrP <|> nonLeftRecursiveP
-      p <- combinedP
-      P.eof
-      pure p
+      choice
+        [ do
+            p <- combinedP
+            P.eof
+            pure p,
+          do
+            whitespace
+            P.eof
+            pure EveryNote
+        ]
     tagCharacters :: S.Set Char
     tagCharacters = S.fromList $ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['-']
 

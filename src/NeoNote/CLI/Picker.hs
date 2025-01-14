@@ -6,6 +6,7 @@ import Brick.Main qualified as M
 import Brick.Types qualified as T
 import Brick.Widgets.Border (hBorder, vBorder)
 import Brick.Widgets.Edit qualified as E
+import Control.Applicative
 import Control.Exception (catch)
 import Control.Monad (when)
 import Data.Coerce (coerce)
@@ -22,23 +23,41 @@ import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Highlight (Highlight, highlight)
 import NeoNote.Note.Note
-import NeoNote.Search
+import NeoNote.Note.Parse
 import NeoNote.Store.Note
-import NeoNote.Time (timeToString)
+import NeoNote.Time
 import Optics.Core
 
 data PickedAction = PickedView NoteInfo | PickedEdit NoteInfo | PickedDelete NoteInfo deriving (Show, Eq, Generic, Ord)
 
-picker :: (IOE :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, NoteSearch :> es, Highlight :> es) => NoteFilter -> Text -> (Maybe PickedAction -> Eff es Bool) -> Eff es ()
+data UINoteHandler = UINoteHandler
+  { getNoteContent :: NoteId -> IO NoteContent,
+    searchNotes :: NoteFilter -> IO [NoteInfo],
+    highlight :: Note -> IO Text,
+    parseNoteFilter :: Text -> IO (Maybe NoteFilter)
+  }
+  deriving (Generic)
+
+picker :: (IOE :> es, GetTime :> es, NoteStore :> es, Log :> es, Error NeoNoteError :> es, Highlight :> es) => NoteFilter -> Text -> (Maybe PickedAction -> Eff es Bool) -> Eff es ()
 picker noteFilter initialText handlePickedAction = do
   withRunInIO $ \unlift -> do
-    let highlightIO ni nc = unlift $ highlight ni nc
-    unlift $ withNoteSearchHandle $ \noteSearchHandle -> do
+    let noteHandler =
+          UINoteHandler
+            { highlight = \(Note ni nc) -> unlift $ highlight ni nc,
+              searchNotes = \nf -> unlift $ findNotes nf >>= traverse readNoteInfo,
+              getNoteContent = \noteId -> unlift $ fmap (^. #content) (readNote noteId),
+              parseNoteFilter = \text -> do
+                time <- unlift getCurrentTime
+                pure $ case parseNoteFilter time text of
+                  Right x -> Just x
+                  Left _err -> Nothing
+            }
+    do
       catch
         ( do
             let singlePick previousUIState = do
-                  currentUIState <- refreshNotes noteSearchHandle highlightIO previousUIState
-                  uiState <- pickerApp noteSearchHandle highlightIO currentUIState
+                  currentUIState <- refreshNotes noteHandler previousUIState
+                  uiState <- pickerApp noteHandler currentUIState
                   continue <- unlift $ handlePickedAction $ uiState ^. #result
                   when continue $
                     singlePick $
@@ -52,8 +71,8 @@ makeInitialState :: NoteFilter -> Text -> UIState
 makeInitialState initialNoteFilter initialSearchTerm = do
   UIState [] 0 Nothing (E.editorText "editor" Nothing initialSearchTerm) initialNoteFilter Nothing
 
-pickerApp :: NoteSearchHandle -> (NoteInfo -> NoteContent -> IO Text) -> UIState -> IO UIState
-pickerApp noteSearchHandle highlightIO = defaultMain app
+pickerApp :: UINoteHandler -> UIState -> IO UIState
+pickerApp noteHandler = defaultMain app
   where
     app :: App UIState () Text
     app =
@@ -122,20 +141,34 @@ pickerApp noteSearchHandle highlightIO = defaultMain app
           position <- view #position <$> get
           filteredNotes <- view #filteredNotes <$> get
           let noteInfo = filteredNotes !? position
-          noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
-          highlightedContent <- liftIO $ sequenceA $ liftA2 highlightIO noteInfo noteContent
+          noteContent <- liftIO $ traverse (noteHandler ^. #getNoteContent) (noteInfo ^. mapping #id)
+          highlightedContent <- liftIO $ sequenceA $ liftA (noteHandler ^. #highlight) (Note <$> noteInfo <*> noteContent)
           modify $ #previewedNote .~ highlightedContent
         updateNotes :: EventM Text UIState ()
         updateNotes = do
           st <- get
-          filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotes) (st ^. #noteFilter) (getSearchTerm st)
-          put $
-            st
-              & #filteredNotes
-              .~ filteredNotes
-              & #position
-              %~ max 0
-              . min (length filteredNotes - 1)
+          maybeNewNoteFilter <- liftIO $ (noteHandler ^. #parseNoteFilter) (getSearchTerm st)
+
+          case maybeNewNoteFilter of
+            Just newNoteFilter -> do
+              filteredNotes <- liftIO $ (noteHandler ^. #searchNotes) newNoteFilter
+              put $
+                st
+                  & #filteredNotes
+                  .~ filteredNotes
+                  & #position
+                  %~ max 0
+                  . min (length filteredNotes - 1)
+            Nothing -> pure ()
+
+-- filteredNotes <- liftIO $ (noteHandler ^. #searchNotes) newNoteFilter
+-- put $
+--   st
+--     & #filteredNotes
+--     .~ filteredNotes
+--     & #position
+--     %~ max 0
+--     . min (length filteredNotes - 1)
 
 selectedAttr :: A.AttrName
 selectedAttr = attrName "selected"
@@ -153,12 +186,12 @@ getSearchTerm = T.strip . T.unlines . E.getEditContents . view #searchTerm
 selectedNoteInfo :: UIState -> Maybe NoteInfo
 selectedNoteInfo st = (st ^. #filteredNotes) !? (st ^. #position)
 
-refreshNotes :: NoteSearchHandle -> (NoteInfo -> NoteContent -> IO Text) -> UIState -> IO UIState
-refreshNotes noteSearchHandle highlightIO st = do
-  filteredNotes <- liftIO $ (noteSearchHandle ^. #searchNotesNoCache) (st ^. #noteFilter) (getSearchTerm st)
+refreshNotes :: UINoteHandler -> UIState -> IO UIState
+refreshNotes noteHandler st = do
+  filteredNotes <- (noteHandler ^. #searchNotes) (st ^. #noteFilter)
   let noteInfo = filteredNotes !? (st ^. #position)
-  noteContent <- liftIO $ traverse (noteSearchHandle ^. #getNoteContent) noteInfo
-  highlightedContent <- sequenceA $ liftA2 highlightIO noteInfo noteContent
+  noteContent <- liftIO $ traverse (noteHandler ^. #getNoteContent) (noteInfo ^. mapping #id)
+  highlightedContent <- sequenceA $ liftA (noteHandler ^. #highlight) $ Note <$> noteInfo <*> noteContent
   pure $
     st
       & #previewedNote

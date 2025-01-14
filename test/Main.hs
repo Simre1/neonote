@@ -73,7 +73,7 @@ editSingleNote :: TestTree
 editSingleNote = testCase "Single note" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "test")
-    handleAction (Action.EditNote EveryNote 1 "")
+    handleAction (Action.EditNote 1 "")
 
     noteIds <- findNotes EveryNote
     notes <- traverse readNote noteIds
@@ -140,7 +140,7 @@ updateTagAfterEdit :: TestTree
 updateTagAfterEdit = testCase "Update tag after edit" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "no tag")
-    handleAction (Action.EditNote EveryNote 1 "")
+    handleAction (Action.EditNote 1 "")
 
     noteIds <- findNotes (HasTag (Tag "test"))
     pure $ length noteIds
@@ -174,7 +174,7 @@ modificationChangesDate = testCase "Modification changes date" $ do
     handleAction (Action.CreateNote True "test")
 
     unmodifiedNoteIds <- findNotes (EqualDate DateLiteralCreated DateLiteralModified)
-    unmodifiedNoteInfos <- traverse getNoteInfo unmodifiedNoteIds
+    unmodifiedNoteInfos <- traverse readNoteInfo unmodifiedNoteIds
 
     liftIO $ threadDelay 1000000
 

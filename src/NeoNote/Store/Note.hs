@@ -9,7 +9,6 @@ import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Note.Parse (extractTags)
 import NeoNote.Store.Database
-import NeoNote.Store.Files
 import NeoNote.Time
 import Optics.Core
 
@@ -19,7 +18,7 @@ data NoteStore :: Effect where
   WriteNote :: NoteInfo -> NoteContent -> NoteStore m ()
   ReadNote :: NoteId -> NoteStore m Note
   DeleteNote :: NoteId -> NoteStore m ()
-  GetNoteInfo :: NoteId -> NoteStore m NoteInfo
+  ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
   CreateNote :: (NoteInfo -> m NoteContent) -> NoteStore m ()
 
 makeEffect ''NoteStore
@@ -31,7 +30,7 @@ runNoteStore = interpret $ \env -> \case
   WriteNote noteInfo noteContent -> runWriteNote noteInfo noteContent
   ReadNote noteId -> runReadNote noteId
   DeleteNote noteId -> runDeleteNote noteId
-  GetNoteInfo noteId -> runGetNoteInfo noteId
+  ReadNoteInfo noteId -> runGetNoteInfo noteId
   CreateNote f -> runCreateNote env f
 
 runNoteExists :: (Database :> es) => NoteId -> Eff es Bool

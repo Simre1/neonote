@@ -31,7 +31,9 @@ data NoteFilter
   | BeforeDate DateLiteral DateLiteral
   | Not NoteFilter
   | And NoteFilter NoteFilter
+  | Together NoteFilter NoteFilter
   | Or NoteFilter NoteFilter
+  | Contains Text
   | EveryNote
   deriving (Show, Eq, Ord, Generic)
 
@@ -46,10 +48,11 @@ data NoteInfo = NoteInfo
   }
   deriving (Generic, Eq, Ord, Show)
 
-data Note = Note {
-  info :: NoteInfo,
-  content :: NoteContent
-} deriving (Generic, Eq, Ord, Show)
+data Note = Note
+  { info :: NoteInfo,
+    content :: NoteContent
+  }
+  deriving (Generic, Eq, Ord, Show)
 
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
 

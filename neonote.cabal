@@ -1,6 +1,6 @@
 cabal-version:      3.12
 name:               neonote
-version:            0.1.0.0
+version:            0.2.0.0
 -- synopsis:
 -- description:
 license:            GPL-3.0-or-later

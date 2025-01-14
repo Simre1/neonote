@@ -18,7 +18,6 @@ import NeoNote.Error (NeoNoteError)
 import NeoNote.Log
 import NeoNote.Note.Highlight (Highlight)
 import NeoNote.Note.Note
-import NeoNote.Search
 import NeoNote.Store.Note (NoteStore)
 import NeoNote.Time
 
@@ -27,19 +26,19 @@ data CLI :: Effect where
   Editor :: NonEmpty Note -> CLI m (NonEmpty NoteContent)
   Pick :: NoteFilter -> Text -> (Maybe PickedAction -> m Bool) -> CLI m ()
   Prompt :: Prompt a -> CLI m a
-  DisplayNotes :: NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> CLI m ()
+  DisplayNotes :: NoteFilter -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> CLI m ()
   DisplayNote :: Bool -> Note -> CLI m ()
 
 makeEffect ''CLI
 
-runCLI :: (IOE :> es, Highlight :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es, NoteSearch :> es) => Eff (CLI : es) a -> Eff es a
+runCLI :: (IOE :> es, Highlight :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es) => Eff (CLI : es) a -> Eff es a
 runCLI = interpret $ \env uiEffect -> do
   case uiEffect of
     Editor notes -> runEditor notes
-    GetActionFromArguments -> getCurrentTime >>= liftIO . parseActionFromArguments
+    GetActionFromArguments -> liftIO parseActionFromArguments
     Pick noteFilter searchTerm handlePickedAction -> localSeqUnlift env $ \unlift ->
       picker noteFilter searchTerm (unlift . handlePickedAction)
     Prompt promptType -> askPrompt promptType
-    DisplayNotes noteFilter search orderBy displayAmount noteAttributes ->
-      displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes
+    DisplayNotes noteFilter orderBy displayAmount noteAttributes ->
+      displayNotesInTerminal noteFilter orderBy displayAmount noteAttributes
     DisplayNote plain note -> displayNoteInTerminal plain note

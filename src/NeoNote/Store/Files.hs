@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 module NeoNote.Store.Files () where
 
 import Control.Exception (SomeException, catch)

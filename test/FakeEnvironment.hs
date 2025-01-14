@@ -15,7 +15,6 @@ import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Highlight (runHighlight)
 import NeoNote.Run
-import NeoNote.Search (runNoteSearch)
 import NeoNote.Store.Database (runDatabase)
 import NeoNote.Store.Note (runNoteStore)
 import NeoNote.Time (runGetTime)
@@ -37,7 +36,6 @@ runFakeIO fakeData eff = do
       . runMakeId
       . runNoteStore
       . runHighlight
-      . runNoteSearch
       . runCLI
       $ eff
   pure $ FakeOutput messages result

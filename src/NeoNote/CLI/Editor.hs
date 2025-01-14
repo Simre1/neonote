@@ -1,6 +1,5 @@
 module NeoNote.CLI.Editor where
 
-import Control.Arrow (Arrow (first))
 import Control.Exception (catch, finally)
 import Control.Monad (guard, zipWithM_)
 import Data.Coerce (coerce)

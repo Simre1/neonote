@@ -9,17 +9,17 @@ import NeoNote.Data.Id (idToText)
 import NeoNote.Error (NeoNoteError)
 import NeoNote.Log
 import NeoNote.Note.Note
-import NeoNote.Search
-import NeoNote.Store.Note (NoteStore, readNote)
+import NeoNote.Store.Note (NoteStore, findNotes, readNote, readNoteInfo)
 import NeoNote.Time
 import Optics.Core
 import Text.Layout.Table
 
-displayNotesInTerminal :: (IOE :> es, Error NeoNoteError :> es, Log :> es, NoteStore :> es, NoteSearch :> es) => NoteFilter -> Text -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> Eff es ()
-displayNotesInTerminal noteFilter search orderBy displayAmount noteAttributes' = do
-  notes <- searchNotes noteFilter search
+displayNotesInTerminal :: (IOE :> es, Error NeoNoteError :> es, Log :> es, NoteStore :> es) => NoteFilter -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> Eff es ()
+displayNotesInTerminal noteFilter orderBy displayAmount noteAttributes' = do
+  noteIds <- findNotes noteFilter
+  noteInfos <- traverse readNoteInfo noteIds
   let notesToDisplay =
-        applyOrder $ take displayAmount $ sortBy (orderNote orderNoteAttribute) notes
+        applyOrder $ take displayAmount $ sortBy (orderNote orderNoteAttribute) noteInfos
 
   rows <- traverse makeNoteRows notesToDisplay
   let table =

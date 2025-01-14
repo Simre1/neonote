@@ -70,6 +70,8 @@ runDatabase eff = do
     noteFilterToCondition (AfterDate d1 d2) = pure $ dateLiteralToCondition ">" d1 d2
     noteFilterToCondition (BeforeDate d1 d2) = pure $ dateLiteralToCondition "<" d1 d2
     --
+    noteFilterToCondition (Together filter1 filter2) =
+      noteFilterToCondition (And filter1 filter2)
     noteFilterToCondition (And filter1 filter2) = do
       condition1 <- noteFilterToCondition filter1
       condition2 <- noteFilterToCondition filter2
@@ -82,6 +84,9 @@ runDatabase eff = do
       condition <- noteFilterToCondition filter1
       pure [__i| (not #{condition}) |]
     noteFilterToCondition EveryNote = pure "1=1"
+    noteFilterToCondition (Contains fragment) = do
+      param <- newParam ("\"" <> fragment <> "\"")
+      pure [__i| (exists ( select noteId, content from notes_search where id = noteId and content match concat(#{param}, '*'))) |]
     dateLiteralToCondition :: Text -> DateLiteral -> DateLiteral -> Text
     dateLiteralToCondition operation d1 d2 =
       let sqlConcat atoms = mconcat $ intersperse " || " atoms
@@ -314,7 +319,7 @@ runDatabase eff = do
         migrate _ _ = error "Weird versions"
 
 tables :: [DB.Query]
-tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, tagTable, configTable]
+tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, tagTable, configTable] ++ searchTable
   where
     noteTable :: DB.Query
     noteTable =
@@ -341,6 +346,38 @@ tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, tagTable, configTable]
         CREATE TABLE IF NOT EXISTS config
           (tableVersion integer NOT NULL)
       |]
+    searchTable :: [DB.Query]
+    searchTable =
+      [ [__i|
+        CREATE VIRTUAL TABLE IF NOT EXISTS notes_search
+        USING fts5(
+          content,
+          noteId UNINDEXED
+        );|],
+        [__i|
+        CREATE TRIGGER IF NOT EXISTS notes_search_insert_trigger
+        AFTER INSERT ON notes
+        BEGIN
+          INSERT INTO notes_search (content, noteId)
+          VALUES (NEW.content, NEW.id);
+        END;|],
+        [__i|
+        CREATE TRIGGER IF NOT EXISTS notes_search_update_trigger
+        AFTER UPDATE ON notes
+        BEGIN
+          UPDATE notes_search
+          SET content = NEW.content
+          WHERE noteId = NEW.id;
+        END;|],
+        [__i|
+        CREATE TRIGGER IF NOT EXISTS notes_search_delete_trigger
+        AFTER DELETE ON notes
+        BEGIN
+          DELETE FROM notes_search
+          WHERE noteId = OLD.id;
+        END;                 
+      |]
+      ]
 
 makeDatabasePath :: FilePath -> FilePath
 makeDatabasePath notesPath = joinPath [notesPath, "notes.db"]

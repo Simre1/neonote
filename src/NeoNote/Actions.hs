@@ -10,28 +10,23 @@ data Action
         noteContent :: Text
       }
   | EditNote
-      { noteFilter :: NoteFilter,
-        amount :: Int,
+      { amount :: Int,
         search :: Text
       }
   | DeleteNote
-      { noteFilter :: NoteFilter,
-        amount :: Int,
+      { amount :: Int,
         search :: Text
       }
   | ViewNote
-      { noteFilter :: NoteFilter,
-        amount :: Int,
+      { amount :: Int,
         plain :: Bool,
         search :: Text
       }
   | PickNote
-      { noteFilter :: NoteFilter,
-        search :: Text
+      { search :: Text
       }
   | ListNotes
-      { noteFilter :: NoteFilter,
-        showAttributes :: [NoteAttribute],
+      { showAttributes :: [NoteAttribute],
         showAmount :: Int,
         orderBy :: OrderBy NoteAttribute,
         search :: Text

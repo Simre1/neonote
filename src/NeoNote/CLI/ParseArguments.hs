@@ -12,26 +12,26 @@ import NeoNote.Time
 import Options.Applicative hiding (action)
 import Paths_neonote qualified as P (version)
 
-parseActionFromArguments :: Time -> IO Action
-parseActionFromArguments time = execParser (cliParser time)
+parseActionFromArguments :: IO Action
+parseActionFromArguments = execParser cliParser
 
-cliParser :: Time -> ParserInfo Action
-cliParser time =
+cliParser :: ParserInfo Action
+cliParser =
   info
-    (helper <*> version <*> programActions time)
+    (helper <*> version <*> programActions)
     (progDesc "Manage your notes with NeoNote in your terminal")
 
 version :: Parser (a -> a)
 version = infoOption (showVersion P.version) (short 'v' <> long "version" <> help "Show version")
 
-programActions :: Time -> Parser Action
-programActions time =
+programActions :: Parser Action
+programActions =
   hsubparser createAction
-    <|> hsubparser (pickAction time)
-    <|> hsubparser (editAction time)
-    <|> hsubparser (viewAction time)
-    <|> hsubparser (deleteAction time)
-    <|> hsubparser (listAction time)
+    <|> hsubparser pickAction
+    <|> hsubparser editAction
+    <|> hsubparser viewAction
+    <|> hsubparser deleteAction
+    <|> hsubparser listAction
     <|> hsubparser scanAction
 
 createAction :: Mod CommandFields Action
@@ -47,42 +47,39 @@ createAction =
     )
     <> metavar "create"
 
-editAction :: Time -> Mod CommandFields Action
-editAction time =
+editAction :: Mod CommandFields Action
+editAction =
   commandWithShortcut
     "edit"
     ( info
         ( EditNote
-            <$> noteFilter time
-            <*> noteAmount 1
+            <$> noteAmount 1
             <*> searchText
         )
         (progDesc "Filter notes and then edit them")
     )
     <> metavar "edit"
 
-deleteAction :: Time -> Mod CommandFields Action
-deleteAction time =
+deleteAction :: Mod CommandFields Action
+deleteAction =
   commandWithShortcut
     "delete"
     ( info
         ( DeleteNote
-            <$> noteFilter time
-            <*> noteAmount 1
+            <$> noteAmount 1
             <*> searchText
         )
         (progDesc "Filter notes and then delete them")
     )
     <> metavar "delete"
 
-viewAction :: Time -> Mod CommandFields Action
-viewAction time =
+viewAction :: Mod CommandFields Action
+viewAction =
   commandWithShortcut
     "view"
     ( info
         ( ViewNote
-            <$> noteFilter time
-            <*> noteAmount 1
+            <$> noteAmount 1
             <*> flag False True (long "plain" <> short 'p' <> help "Get plain output with no highlighting")
             <*> searchText
         )
@@ -90,27 +87,25 @@ viewAction time =
     )
     <> metavar "view"
 
-pickAction :: Time -> Mod CommandFields Action
-pickAction time =
+pickAction :: Mod CommandFields Action
+pickAction =
   commandWithShortcut
     "pick"
     ( info
         ( PickNote
-            <$> noteFilter time
-            <*> searchText
+            <$> searchText
         )
         (progDesc "Pick notes to edit/view/delete")
     )
     <> metavar "pick"
 
-listAction :: Time -> Mod CommandFields Action
-listAction time =
+listAction :: Mod CommandFields Action
+listAction =
   commandWithShortcut
     "list"
     ( info
         ( ListNotes
-            <$> noteFilter time
-            <*> many
+            <$> many
               ( option
                   noteAttribute
                   ( short 'a'
@@ -134,7 +129,7 @@ scanAction :: Mod CommandFields Action
 scanAction = commandWithShortcut "scan" (info (pure ScanNotes) (progDesc "Scan notes and update database")) <> metavar "scan"
 
 searchText :: Parser Text
-searchText = strArgument (value "" <> help "Initial search text" <> metavar "Search text")
+searchText = strArgument (value "" <> help "Search text" <> metavar "Search text")
 
 noteAmount :: Int -> Parser Int
 noteAmount defaultAmount = option auto (value defaultAmount <> short 'n' <> long "number" <> help "Number of notes")
