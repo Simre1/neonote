@@ -1,5 +1,8 @@
 module NeoNote.Store.Note where
 
+import Control.Monad
+import Data.List (sortBy)
+import Data.Text
 import Effectful
 import Effectful.Dispatch.Dynamic (LocalEnv, interpret, localSeqUnlift)
 import Effectful.TH (makeEffect)
@@ -20,6 +23,7 @@ data NoteStore :: Effect where
   DeleteNote :: NoteId -> NoteStore m ()
   ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
   CreateNote :: (NoteInfo -> m NoteContent) -> NoteStore m ()
+  BulkCreateNotes :: [(Text, NoteContent)] -> NoteStore m ()
 
 makeEffect ''NoteStore
 
@@ -32,18 +36,22 @@ runNoteStore = interpret $ \env -> \case
   DeleteNote noteId -> runDeleteNote noteId
   ReadNoteInfo noteId -> runGetNoteInfo noteId
   CreateNote f -> runCreateNote env f
+  BulkCreateNotes noteData -> runBulkCreateNotes noteData
 
 runNoteExists :: (Database :> es) => NoteId -> Eff es Bool
 runNoteExists = dbNoteExists
 
 runFindNotes :: (Database :> es) => NoteFilter -> Eff es [NoteId]
-runFindNotes = dbFindNotes
+runFindNotes noteFilter = do
+  noteIds <- dbFindNotes noteFilter
+  noteInfos <- traverse dbReadNoteInfo noteIds
+  pure $ sortBy (orderNote AttributeModified) noteInfos ^. mapping #id
 
 runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
 runWriteNote noteInfo noteContent = do
   if hasContent noteContent
     then do
-      oldNote <- dbGetNote (noteInfo ^. #id)
+      oldNote <- dbReadNote (noteInfo ^. #id)
       if oldNote ^. #content /= noteContent
         then do
           runWriteNoteNoLogging noteInfo noteContent
@@ -63,14 +71,14 @@ runWriteNoteNoLogging noteInfo noteContent = do
   dbWriteNote (Note updatedNoteInfo noteContent)
 
 runReadNote :: (Database :> es) => NoteId -> Eff es Note
-runReadNote = dbGetNote
+runReadNote = dbReadNote
 
 runDeleteNote :: (Database :> es) => NoteId -> Eff es ()
 runDeleteNote noteId = do
   dbDeleteNote noteId
 
 runGetNoteInfo :: (Database :> es) => NoteId -> Eff es NoteInfo
-runGetNoteInfo = dbGetNoteInfo
+runGetNoteInfo = dbReadNoteInfo
 
 runCreateNote :: (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs NoteContent) -> Eff es ()
 runCreateNote env getNoteContent = do
@@ -82,6 +90,24 @@ runCreateNote env getNoteContent = do
       logMessage NoteCreated
     else do
       logMessage NoteEmpty
+
+runBulkCreateNotes :: (GetTime :> es, Database :> es, MakeId :> es, Log :> es) => [(Text, NoteContent)] -> Eff es ()
+runBulkCreateNotes noteData = do
+  currentTime <- getCurrentTime
+  notes <- forM noteData $ \(extension, noteContent) -> do
+    noteId <- makeNoteId
+    let tags = extractTags noteContent
+        noteInfo =
+          NoteInfo
+            { id = noteId,
+              tags = tags,
+              extension = extension,
+              created = currentTime,
+              modified = currentTime
+            }
+    pure $ Note noteInfo noteContent
+  dbWriteNotes notes
+  logMessage NotesAdded
 
 makeNewNoteInfo :: (GetConfiguration :> es, GetTime :> es, Database :> es, MakeId :> es) => Eff es NoteInfo
 makeNewNoteInfo = do

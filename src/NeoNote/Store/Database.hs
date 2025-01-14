@@ -23,15 +23,18 @@ import Optics.Core
 import System.FilePath (joinPath)
 
 data Database :: Effect where
-  DbGetNoteInfo :: NoteId -> Database m NoteInfo
   DbWriteNoteInfo :: NoteInfo -> Database m ()
-  DbWriteNote :: Note -> Database m ()
-  DbGetNote :: NoteId -> Database m Note
+  DbWriteNotes :: [Note] -> Database m ()
+  DbReadNote :: NoteId -> Database m Note
+  DbReadNoteInfo :: NoteId -> Database m NoteInfo
   DbFindNotes :: NoteFilter -> Database m [NoteId]
   DbNoteExists :: NoteId -> Database m Bool
   DbDeleteNote :: NoteId -> Database m ()
 
 makeEffect ''Database
+
+dbWriteNote :: (Database :> es) => Note -> Eff es ()
+dbWriteNote x = dbWriteNotes [x]
 
 runDatabase :: forall es a es'. (es' ~ Error DatabaseError : es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => Eff (Database : es) a -> Eff es a
 runDatabase eff = do
@@ -46,9 +49,9 @@ runDatabase eff = do
           ( \_ databaseEffect -> case databaseEffect of
               DbNoteExists noteId -> handleNoteExists connection noteId
               DbWriteNoteInfo noteInfo -> handleWriteNoteInfo connection noteInfo
-              DbWriteNote note -> handleWriteNote connection note
-              DbGetNote note -> handleGetNote connection note
-              DbGetNoteInfo noteId -> handleGetNoteInfo connection noteId
+              DbWriteNotes note -> handleWriteNote connection note
+              DbReadNote note -> handleReadNote connection note
+              DbReadNoteInfo noteId -> handleReadNoteInfo connection noteId
               DbFindNotes notesFilter -> handleFindNotes connection notesFilter
               DbDeleteNote noteId -> handleDBDeleteNote connection noteId
           )
@@ -158,8 +161,8 @@ runDatabase eff = do
             |]
             (noteIdToText (noteInfo ^. #id), coerce @_ @Text tag)
 
-    handleGetNoteInfo :: DB.Connection -> NoteId -> Eff es' NoteInfo
-    handleGetNoteInfo connection noteId = do
+    handleReadNoteInfo :: DB.Connection -> NoteId -> Eff es' NoteInfo
+    handleReadNoteInfo connection noteId = do
       resultsNotes <-
         liftIO $
           DB.query
@@ -219,9 +222,9 @@ runDatabase eff = do
       forM results $ \(DB.Only matchedNoteId) ->
         maybe (throwError $ CorruptedNoteId matchedNoteId) pure $ noteIdFromText matchedNoteId
 
-    handleWriteNote :: DB.Connection -> Note -> Eff es' ()
-    handleWriteNote connection (Note noteInfo (NoteContent noteContent)) =
-      liftIO $ DB.withTransaction connection $ do
+    handleWriteNote :: DB.Connection -> [Note] -> Eff es' ()
+    handleWriteNote connection notes =
+      liftIO $ DB.withTransaction connection $ forM_ notes $ \(Note noteInfo (NoteContent noteContent)) -> do
         DB.execute
           connection
           [__i|  
@@ -250,8 +253,8 @@ runDatabase eff = do
             |]
             (noteIdToText (noteInfo ^. #id), coerce @_ @Text tag)
 
-    handleGetNote :: DB.Connection -> NoteId -> Eff es' Note
-    handleGetNote connection noteId = do
+    handleReadNote :: DB.Connection -> NoteId -> Eff es' Note
+    handleReadNote connection noteId = do
       resultsNotes <-
         liftIO $
           DB.query

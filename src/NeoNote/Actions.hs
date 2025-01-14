@@ -31,5 +31,5 @@ data Action
         orderBy :: OrderBy NoteAttribute,
         search :: Text
       }
-  | ScanNotes
+  | AddNotes {path :: [FilePath]}
   deriving (Generic, Show, Eq, Ord)

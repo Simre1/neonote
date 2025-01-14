@@ -1,9 +1,10 @@
 module NeoNote.Run where
 
-import Control.Monad (forM_, when)
+import Control.Monad (forM, forM_, when)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
-import Data.Text (Text)
+import Data.Text (Text, pack)
+import Data.Text.IO qualified as T
 import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Actions qualified as Action
@@ -23,6 +24,7 @@ import NeoNote.Store.Database (Database, runDatabase)
 import NeoNote.Store.Note
 import NeoNote.Time
 import Optics.Core
+import System.FilePath (takeExtension)
 
 type AppEffects = [CLI, Highlight, NoteStore, MakeId, Database, Cache, GetTime, Error NeoNoteError, Log, GetConfiguration, IOE]
 
@@ -55,7 +57,7 @@ handleAction action = case action of
   Action.ViewNote amount plain searchText -> runViewNoteAction amount plain searchText
   Action.ListNotes attributesToShow showAmount orderBy searchText ->
     runListNotesAction searchText attributesToShow showAmount orderBy
-  Action.ScanNotes -> runScanNotesAction
+  Action.AddNotes paths -> runAddNotesAction paths
 
 runCreateNoteAction :: (CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 runCreateNoteAction initialText skipEditor = do
@@ -133,8 +135,15 @@ runListNotesAction search noteAttributes showAmount orderBy = do
   noteFilter <- makeNoteFilter search
   displayNotes noteFilter orderBy showAmount noteAttributes
 
-runScanNotesAction :: (IOE :> es) => Eff es ()
-runScanNotesAction = liftIO $ putStrLn "Sorry, not yet implemented"
+runAddNotesAction :: (IOE :> es, NoteStore :> es) => [FilePath] -> Eff es ()
+runAddNotesAction paths = do
+  noteData <- forM paths $ \filePath -> do
+    let extension = pack $ takeExtension filePath
+    content <- liftIO $ T.readFile filePath
+    pure (extension, NoteContent content)
+  bulkCreateNotes noteData
+
+-- putStrLn "Sorry, not yet implemented"
 
 makeNoteFilter :: (GetTime :> es, Error NeoNoteError :> es) => Text -> Eff es NoteFilter
 makeNoteFilter searchText = do

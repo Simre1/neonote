@@ -13,6 +13,7 @@ data Message
   | NoteEmpty
   | NoteEdited
   | NoteUnchanged
+  | NotesAdded
   deriving (Generic, Show, Eq, Ord)
 
 data Warning
@@ -29,6 +30,7 @@ showMessage NoteCreated = "Note has been created"
 showMessage NoteEmpty = "Note is empty, so nothing has been done"
 showMessage NoteEdited = "Note has been edited"
 showMessage NoteUnchanged = "Note is unchanged, so nothing has been done"
+showMessage NotesAdded = "Notes have been added"
 
 runLog :: (IOE :> es) => Eff (Log : es) a -> Eff es a
 runLog = interpret $ \_ -> \case

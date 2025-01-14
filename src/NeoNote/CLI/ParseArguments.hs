@@ -32,7 +32,7 @@ programActions =
     <|> hsubparser viewAction
     <|> hsubparser deleteAction
     <|> hsubparser listAction
-    <|> hsubparser scanAction
+    <|> hsubparser addNotesAction
 
 createAction :: Mod CommandFields Action
 createAction =
@@ -125,8 +125,11 @@ listAction =
     )
     <> metavar "list"
 
-scanAction :: Mod CommandFields Action
-scanAction = commandWithShortcut "scan" (info (pure ScanNotes) (progDesc "Scan notes and update database")) <> metavar "scan"
+addNotesAction :: Mod CommandFields Action
+addNotesAction = commandWithShortcut "import" (info (AddNotes <$> paths) (progDesc "Import notes from filepaths")) <> metavar "import"
+
+paths :: Parser [FilePath]
+paths = many $ strArgument (help "Note path" <> metavar "Note paths")
 
 searchText :: Parser Text
 searchText = strArgument (value "" <> help "Search text" <> metavar "Search text")

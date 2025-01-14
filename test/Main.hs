@@ -3,14 +3,17 @@ module Main (main) where
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Set qualified as S (fromList)
+import Data.Text.IO qualified as T
 import FakeEnvironment
 import NeoNote.Actions qualified as Action
+import NeoNote.Configuration
 import NeoNote.Log
 import NeoNote.Note.Note
 import NeoNote.Run (handleAction)
 import NeoNote.Store.Note
 import NeoNote.Time
 import Optics.Core
+import System.FilePath ((</>))
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -19,7 +22,7 @@ main =
   defaultMain $
     testGroup
       "NeoNote"
-      [ testGroup "Create" [createNoNote, createSingleNote, createMultipleNotes],
+      [ testGroup "Create" [createNoNote, createSingleNote, createMultipleNotes, addMultipleNotes],
         testGroup "Edit" [editSingleNote],
         testGroup "Tag" [singleTag, hyphenatedTag, manyTags, updateTagAfterEdit],
         testGroup "Date" [after2020, modificationChangesDate]
@@ -66,6 +69,28 @@ createMultipleNotes = testCase "Multiple notes" $ do
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
     Right a -> a @?= S.fromList [NoteContent "test1", NoteContent "test2", NoteContent "test3"]
+  where
+    fakeData = FakeData {defaultExtension = "md", editorWrites = ["test2", "3"]}
+
+addMultipleNotes :: TestTree
+addMultipleNotes = testCase "Add multiple notes" $ do
+  fakeOutput <- runFakeIO fakeData $ do
+    notesPath <- getConfiguration #notesPath
+    liftIO $ do
+      T.writeFile (notesPath </> "1.md") "Note1"
+      T.writeFile (notesPath </> "2.md") "Note2 #my-tag"
+      T.writeFile (notesPath </> "3.md") "Note3"
+    handleAction (Action.AddNotes ((notesPath </>) <$> ["1.md", "2.md", "3.md"]))
+    allNotes <- findNotes EveryNote >>= traverse readNote
+    tagNote <- findNotes (HasTag (Tag "my-tag")) >>= traverse readNote
+    pure $ (S.fromList $ allNotes ^. mapping #content, tagNote ^. mapping #content)
+
+  fakeOutput ^. #logs @?= [NotesAdded]
+  case fakeOutput ^. #output of
+    Left _ -> assertFailure "Unexpected NeoNoteError"
+    Right (allNotes, tagNote) -> do
+      allNotes @?= S.fromList [NoteContent "Note1", NoteContent "Note2 #my-tag", NoteContent "Note3"]
+      tagNote @?= [NoteContent "Note2 #my-tag"]
   where
     fakeData = FakeData {defaultExtension = "md", editorWrites = ["test2", "3"]}
 
