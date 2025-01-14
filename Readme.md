@@ -3,13 +3,13 @@
 NeoNote is a terminal app to manage your notes. NeoNote stores your notes for you and provides filtering and searching options to find them easily.
 
 ![Animated showcase of NeoNote](recordings/showcase.gif)
+Video is for version 0.1.0!
 
 ## Features
 
 - Create/Edit/Delete Notes
 - Parses tags directly from your note
-- Filter notes based on tag and creation/modification date
-- Fuzzy search notes incrementally
+- Filter notes based on tags, searches and creation/modification date
 
 ## Installation
 
@@ -55,7 +55,6 @@ nn pick
 ```
 
 Within this UI, you can incrementally search through your notes. It is possible to edit with `ENTER`, delete with `CTRL-X` and view with `CTRL-Y`.
-You can also apply a filter before picking from your notes with the `--filter` option.
 
 ### Processing notes without the picker
 
@@ -64,20 +63,20 @@ nn edit
 ```
 
 `edit` will directly open your editor with all matched notes.
-Per default, it will only match `1` note with no searching or filtering.
+Per default, it will only match `1` note with no filtering.
 This means it will open the note which was last modified. 
 
 You can specify a filter, a search term and the amount of notes to match. The following command
-will open at most 3 notes with the tag `#neonote` and the word `todo`.
+will open at most 3 notes with the word `todo`.
 ```
-nn edit --filter neonote --number 3 todo 
+nn edit --number 3 todo
 ```
 
 Similarly to the `edit` command, there exist `delete` and `view` commands to delete and view multiple notes.
 
 This will delete up to a hundred notes with the tag `#archived`.
 ```
-nn delete --filter archived --number 100
+nn delete --number 100 "#archived" 
 ```
 
 This will view up to 10 notes with the word linux
@@ -87,8 +86,7 @@ nn view --number 10 linux
 
 ### List notes
 
-The `list` command gives you an overview of your notes by printing them in a table and giving you information about their
-modification date or their tags.
+The `list` command gives you an overview of your notes by printing them in a table. It gives you information about their modification date and their tags.
 
 ```
 nn list
@@ -105,9 +103,9 @@ Now, `id` and `created` will be shown instead of the default `modified` and `tag
 The content preview will always be shown regardless of given attributes.
 
 Of course, you can combine this normal filtering and searching. The following
-command will list up to 5 notes with the `#blog` tag and the word haskell. 
+command will list up to 5 notes with the word haskell. 
 ```
-nn l --filter blog --number 5 haskell
+nn l --number 5 haskell
 ```
 
 ## Tags
@@ -117,13 +115,13 @@ Currently, tags may consist of english characters as well as `-` (no numbers!).
 
 ## Filter notes
 
-You can filter before searching with the `--filter` argument.
+You can filter notes using the filter grammar.
 
 ```
-nn view --filter "programming"
+nn view "programming"
 ```
 
-This will only allow you to pick between notes which have the tag `programming`.
+This will show you notes which contain the word `programming`.
 This can also be used with `delete`, `edit` and `list`.
 
 ### Boolean logic for filtering
@@ -132,13 +130,16 @@ This can also be used with `delete`, `edit` and `list`.
 - `a & b` matches if both `a` and `b` match
 - `a | b` matches if either `a` or `b` matches
 - `~ a` matches if `a` does not match
+- `#my-tag` matches if note contains #my-tag
+- `foo` matches if note contains the string foo
 - Use brackets (`(a)`) to group expressions
+- Use quotes (`"%many +words$"`) to escape search strings and search for special characters
 
 ```
-nn view --filter "*" # matches everything
-nn view --filter "programming & ~html" # matches notes with the tag programming but not the tag html
-nn view --filter "programming | coding" # matches notes with either the tag programming or the tag coding
-nn view --filter "(programming | coding) & ~html" # combine expressions with brackets
+nn view "*" # matches everything
+nn view "#programming & ~html" # matches notes with the tag programming without the word html
+nn view "#programming | #coding" # matches notes with either the tag programming or the tag coding
+nn view "(#programming | #coding) & ~html" # combine expressions with brackets
 ```
 
 ### Date filters
@@ -151,16 +152,16 @@ In addition to filtering for tags, you can also filter based on the creation and
 - `HH-MM-SS` for time literals
 
 ```
-nn view --filter "created = 2023-07-01" # matches all notes created on 2023-07-01
-nn view --filter "modified = 2023-07-01" # matches all notes modified on 2023-07-01
-nn view --filter "modified > 2023-07-01" # matches all notes modified after 2023-07-01
-nn view --filter "modified < 2023-07-01" # matches all notes modified before 2023-07-01
-nn view --filter "modified > 2023-05-30 & modified < 2023-07-01" # matches all notes modified in June 2023
-nn view --filter "modified > 2023-07-01 & programming" # matches all notes modified after 2023-07-01 with the tag programming
-nn view --filter "modified > 10:30:00" # matches all notes modified after 10:30:00
+nn view "created = 2023-07-01" # matches all notes created on 2023-07-01
+nn view "modified = 2023-07-01" # matches all notes modified on 2023-07-01
+nn view "modified > 2023-07-01" # matches all notes modified after 2023-07-01
+nn view "modified < 2023-07-01" # matches all notes modified before 2023-07-01
+nn view "modified > 2023-05-30 & modified < 2023-07-01" # matches all notes modified in June 2023
+nn view "modified > 2023-07-01 & #programming" # matches all notes modified after 2023-07-01 with the tag programming
+nn view "modified > 10:30:00" # matches all notes modified after 10:30:00
 ```
 
-In the future, less restrictive date specifications will be possible.
+In the future, less restrictive date specifications might be possible.
 For example, you could apply the filter `modified = July` or `created = around 10am`.
 
 ## Configuration
@@ -172,7 +173,7 @@ You have two options to specify configurations:
 
 ### Default note location
 
-Per default, neonote stores notes as `md` (Markdown) files in a folder `neonote` in the XDG data directory (`.local/share/neonote` on Linux).  
+Per default, neonote stores notes as `md` (Markdown) text within a `notes.db` database in a folder `neonote` in the XDG data directory (`.local/share/neonote` on Linux).  
 
 ### Possible Editors
 
