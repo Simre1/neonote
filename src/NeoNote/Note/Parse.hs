@@ -7,6 +7,7 @@ import Data.Set qualified as S
 import Data.Text
 import Data.Text qualified as T
 import Data.Void (Void)
+import Debug.Trace
 import NeoNote.Note.Note
 import NeoNote.Time
 import Text.Megaparsec (choice)
@@ -33,7 +34,7 @@ whitespace :: Parser ()
 whitespace = void $ P.takeWhileP (Just "Whitespace") (<= ' ')
 
 parseNoteFilter :: Time -> Text -> Either Text NoteFilter
-parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parser "note filter string"
+parseNoteFilter currentTime = traceShowId . first (pack . P.errorBundlePretty) . P.parse parser "note filter string"
   where
     parser :: Parser NoteFilter
     parser = do
@@ -44,7 +45,7 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
             guard $ T.last tagString /= '-'
             guard $ not $ tagString `S.member` S.fromList ["created", "c", "modified", "c"]
             pure $ HasTag $ Tag tagString
-          timeP = do
+          timeP = P.try $ do
             d1 <- dateParser currentTime
             operation <- lexeme $ EqualDate <$ P.char '=' <|> AfterDate <$ P.char '>' <|> BeforeDate <$ P.char '<'
             d2 <- dateParser currentTime
