@@ -54,7 +54,6 @@ library
         Data.Functor.Empty
 
         NeoNote.Run
-        NeoNote.Search
         NeoNote.Note.Highlight
         NeoNote.Note.Note
         NeoNote.Note.Parse
@@ -83,7 +82,6 @@ library
         string-interpolate >= 0.3.4,
         optparse-applicative,
         typed-process,
-        fuzzy,
         brick,
         vty,
         regex-tdfa,
@@ -91,13 +89,10 @@ library
         table-layout,
         data-default,
         config-ini,
-        skylighting,
         pretty-terminal,
         hashable
         
     hs-source-dirs:   src
-    -- extra-libraries: matcher
-    -- includes: matcher/matcher.h
 
 executable neonote
     import:           common

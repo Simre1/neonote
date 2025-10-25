@@ -19,7 +19,6 @@ import NeoNote.Log
 import NeoNote.Note.Highlight (Highlight, runHighlightWithCache)
 import NeoNote.Note.Note
 import NeoNote.Note.Parse (parseNoteFilter)
-import NeoNote.Search
 import NeoNote.Store.Database (Database, runDatabase)
 import NeoNote.Store.Note
 import NeoNote.Time
