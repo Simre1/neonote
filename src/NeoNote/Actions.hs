@@ -31,5 +31,6 @@ data Action
         orderBy :: OrderBy NoteAttribute,
         search :: Text
       }
-  | AddNotes {path :: [FilePath]}
+  | AddNotes {paths :: [FilePath]}
+  | ExportNotes {path :: Maybe FilePath, search :: Text}
   deriving (Generic, Show, Eq, Ord)

@@ -18,7 +18,7 @@ import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
-import NeoNote.Time (IncompleteTime (..), timeFromString, timeToString)
+import NeoNote.Time (IncompleteTime (..), formatTime, timeFromString)
 import Optics.Core
 import System.FilePath (joinPath)
 
@@ -142,8 +142,8 @@ runDatabase eff = do
           |]
           ( noteIdToText (noteInfo ^. #id),
             noteInfo ^. #extension,
-            timeToString $ noteInfo ^. #created,
-            timeToString $ noteInfo ^. #modified
+            formatTime $ noteInfo ^. #created,
+            formatTime $ noteInfo ^. #modified
           )
         DB.execute
           connection
@@ -233,8 +233,8 @@ runDatabase eff = do
           |]
           ( noteIdToText (noteInfo ^. #id),
             noteInfo ^. #extension,
-            timeToString $ noteInfo ^. #created,
-            timeToString $ noteInfo ^. #modified,
+            formatTime $ noteInfo ^. #created,
+            formatTime $ noteInfo ^. #modified,
             noteContent
           )
         DB.execute

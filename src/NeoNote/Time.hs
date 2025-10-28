@@ -4,19 +4,28 @@ import Control.Applicative (Alternative ((<|>)))
 import Data.Text (Text, pack, unpack)
 import Data.Time (UTCTime, defaultTimeLocale, formatTime, parseTimeM)
 import Data.Time qualified as Time
+import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import Optics.Core
-import Data.Time.Clock (secondsToNominalDiffTime, addUTCTime)
 
 newtype Time = Time UTCTime deriving (Generic, Show, Eq, Ord)
 
-timeToString :: Time -> Text
-timeToString (Time utcTime) =
+formatTime :: Time -> Text
+formatTime (Time utcTime) =
   pack $
-    formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" utcTime
+    Time.formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" utcTime
+
+formatDate :: Time -> Text
+formatDate (Time utcTime) =
+  pack $
+    Time.formatTime defaultTimeLocale "%Y-%m-%d" utcTime
+
+formatTimestamp :: Text -> Time -> Text
+formatTimestamp prefix (Time utcTime) =
+  prefix <> "-" <> pack (Time.formatTime defaultTimeLocale "%Y-%m-%d" utcTime)
 
 timeFromString :: Text -> Maybe Time
 timeFromString text =
@@ -36,28 +45,32 @@ timeFromString text =
 -- dayToString (Day day) =
 --   pack $ formatTime defaultTimeLocale "%H:%M:%S" day
 
-
 dayFromString :: Text -> Maybe IncompleteTime
 dayFromString text = do
-  (y,m,d) <- Time.toGregorian <$> parseTimeM False defaultTimeLocale "%Y-%m-%d" (unpack text)
+  (y, m, d) <- Time.toGregorian <$> parseTimeM False defaultTimeLocale "%Y-%m-%d" (unpack text)
   pure $
     mempty
-      & #year ?~ fromIntegral y
-      & #month ?~ m
-      & #day ?~ fromEnum d
-      
+      & #year
+      ?~ fromIntegral y
+      & #month
+      ?~ m
+      & #day
+      ?~ fromEnum d
+
 timeOfDayFromString :: Text -> Maybe IncompleteTime
 timeOfDayFromString text = do
   (Time.TimeOfDay h m s) <- parseTimeM False defaultTimeLocale "%H:%M:%S" (unpack text)
   pure $
     mempty
-      & #hour ?~ h
-      & #minute ?~ m
-      & #seconds ?~ fromEnum s
+      & #hour
+      ?~ h
+      & #minute
+      ?~ m
+      & #seconds
+      ?~ fromEnum s
 
 addSeconds :: Time -> Int -> Time
 addSeconds (Time t) seconds = Time $ addUTCTime (secondsToNominalDiffTime $ fromIntegral seconds) t
-
 
 addMinutes :: Time -> Int -> Time
 addMinutes t m = addSeconds t (m * 60)

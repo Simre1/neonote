@@ -1,7 +1,7 @@
 module NeoNote.Note.Note where
 
 import Data.Coerce (coerce)
-import Data.List (intersperse)
+import Data.List (intersperse, sortBy)
 import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -94,3 +94,15 @@ concatTags tags =
         <$> S.toList tags
 
 data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
+
+newtype Ordered a = Ordered {list :: [a]} deriving (Eq, Ord, Show, Generic)
+
+orderNotes :: OrderBy NoteAttribute -> Int -> [NoteInfo] -> Ordered NoteInfo
+orderNotes ordering amount notes =
+  let (applyOrder, orderNoteAttribute) = case ordering of
+        Ascending a -> (reverse, a)
+        Descending a -> (id, a)
+   in Ordered $
+        applyOrder $
+          take amount $
+            sortBy (\n1 n2 -> orderNote orderNoteAttribute n1 n2) notes

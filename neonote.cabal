@@ -86,7 +86,6 @@ library
         vty,
         regex-tdfa,
         megaparsec,
-        table-layout,
         data-default,
         config-ini,
         pretty-terminal,

@@ -130,3 +130,6 @@ makeNoteId = do
   if not idAlreadyUsed
     then pure $ NoteId uncheckedId
     else makeNoteId
+
+readNotes :: (NoteStore :> es) => [NoteId] -> Eff es [Note]
+readNotes = traverse readNote

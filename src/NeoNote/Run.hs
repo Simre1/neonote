@@ -4,6 +4,7 @@ import Control.Monad (forM, forM_, when)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Effectful
 import Effectful.Error.Dynamic
@@ -23,7 +24,8 @@ import NeoNote.Store.Database (Database, runDatabase)
 import NeoNote.Store.Note
 import NeoNote.Time
 import Optics.Core
-import System.FilePath (takeExtension)
+import System.Directory (createDirectory, createDirectoryIfMissing, getCurrentDirectory)
+import System.FilePath (takeExtension, (</>))
 
 type AppEffects = [CLI, Highlight, NoteStore, MakeId, Database, Cache, GetTime, Error NeoNoteError, Log, GetConfiguration, IOE]
 
@@ -57,6 +59,7 @@ handleAction action = case action of
   Action.ListNotes attributesToShow showAmount orderBy searchText ->
     runListNotesAction searchText attributesToShow showAmount orderBy
   Action.AddNotes paths -> runAddNotesAction paths
+  Action.ExportNotes path searchText -> runExportNotesAction path searchText
 
 runCreateNoteAction :: (CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 runCreateNoteAction initialText skipEditor = do
@@ -129,10 +132,17 @@ runViewNoteAction amount plain searchTerm = do
         note <- readNote noteId
         displayNote plain note
 
-runListNotesAction :: (CLI :> es, Error NeoNoteError :> es, GetTime :> es) => Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
+runListNotesAction :: (NoteStore :> es, CLI :> es, Error NeoNoteError :> es, GetTime :> es) => Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 runListNotesAction search noteAttributes showAmount orderBy = do
+  let noteAttributes' =
+        if null noteAttributes
+          then [AttributeId]
+          else noteAttributes
   noteFilter <- makeNoteFilter search
-  displayNotes noteFilter orderBy showAmount noteAttributes
+  noteIds <- findNotes noteFilter
+  noteInfos <- traverse readNoteInfo noteIds
+  let orderedNoteInfos = orderNotes orderBy showAmount noteInfos
+  displayNotes noteAttributes' orderedNoteInfos
 
 runAddNotesAction :: (IOE :> es, NoteStore :> es) => [FilePath] -> Eff es ()
 runAddNotesAction paths = do
@@ -142,7 +152,28 @@ runAddNotesAction paths = do
     pure (extension, NoteContent content)
   bulkCreateNotes noteData
 
--- putStrLn "Sorry, not yet implemented"
+runExportNotesAction :: (IOE :> es, MakeId :> es, GetTime :> es, NoteStore :> es, Error NeoNoteError :> es) => Maybe FilePath -> Text -> Eff es ()
+runExportNotesAction maybePath text = do
+  dirPath <- case maybePath of
+    Just path -> pure path
+    Nothing -> do
+      cwd <- liftIO getCurrentDirectory
+      time <- getCurrentTime
+      pathId <- makeId
+      let prefix = "neonote-export" <> "-" <> idToText pathId
+      let timestamp = formatTimestamp prefix time
+      let dirPath = cwd </> T.unpack timestamp
+      pure dirPath
+
+  liftIO $ createDirectoryIfMissing True dirPath
+
+  noteFilter <- makeNoteFilter text
+  noteIds <- findNotes noteFilter
+  notes <- readNotes noteIds
+
+  liftIO $ forM_ notes $ \note -> do
+    let filepath = dirPath </> (T.unpack $ noteFileName $ note ^. #info)
+    T.writeFile filepath (note ^. #content % coerced)
 
 makeNoteFilter :: (GetTime :> es, Error NeoNoteError :> es) => Text -> Eff es NoteFilter
 makeNoteFilter searchText = do

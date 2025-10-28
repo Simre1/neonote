@@ -95,7 +95,7 @@ pickerApp noteHandler = defaultMain app
             items -> foldl1 (<=>) items
         drawItem index noteInfo =
           (if index == st ^. #position then withAttr selectedAttr else id) $
-            txt [__i| #{timeToString $ noteInfo ^. #modified}\n #{T.take 30 $ concatTags $ noteInfo ^. #tags}  |]
+            txt [__i| #{formatTime $ noteInfo ^. #modified}\n #{T.take 30 $ concatTags $ noteInfo ^. #tags}  |]
         searchbar =
           padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))
         previewNote = padBottom Max $ padAll 1 $ padRight Max $ txt $ fromMaybe "No matched note" $ do
@@ -160,15 +160,6 @@ pickerApp noteHandler = defaultMain app
                   %~ max 0
                   . min (length filteredNotes - 1)
             Nothing -> pure ()
-
--- filteredNotes <- liftIO $ (noteHandler ^. #searchNotes) newNoteFilter
--- put $
---   st
---     & #filteredNotes
---     .~ filteredNotes
---     & #position
---     %~ max 0
---     . min (length filteredNotes - 1)
 
 selectedAttr :: A.AttrName
 selectedAttr = attrName "selected"

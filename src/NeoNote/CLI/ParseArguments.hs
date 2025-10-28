@@ -33,6 +33,7 @@ programActions =
     <|> hsubparser deleteAction
     <|> hsubparser listAction
     <|> hsubparser addNotesAction
+    <|> hsubparser exportNotesAction
 
 createAction :: Mod CommandFields Action
 createAction =
@@ -126,10 +127,16 @@ listAction =
     <> metavar "list"
 
 addNotesAction :: Mod CommandFields Action
-addNotesAction = commandWithShortcut "import" (info (AddNotes <$> paths) (progDesc "Import notes from filepaths")) <> metavar "import"
+addNotesAction = command "import" (info (AddNotes <$> paths) (progDesc "Import notes from filepaths")) <> metavar "import"
+
+exportNotesAction :: Mod CommandFields Action
+exportNotesAction = command "export" (info (ExportNotes <$> exportPath <*> searchText) (progDesc "Export notes into a folder")) <> metavar "export"
 
 paths :: Parser [FilePath]
 paths = many $ strArgument (help "Note path" <> metavar "Note paths")
+
+exportPath :: Parser (Maybe FilePath)
+exportPath = optional $ option auto (short 'o' <> long "output" <> help "Export directory")
 
 searchText :: Parser Text
 searchText = strArgument (value "" <> help "Search text" <> metavar "Search text")

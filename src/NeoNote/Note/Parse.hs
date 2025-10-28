@@ -34,7 +34,7 @@ whitespace :: Parser ()
 whitespace = void $ P.takeWhileP (Just "Whitespace") (<= ' ')
 
 parseNoteFilter :: Time -> Text -> Either Text NoteFilter
-parseNoteFilter currentTime = traceShowId . first (pack . P.errorBundlePretty) . P.parse parser "note filter string"
+parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parser "note filter string"
   where
     parser :: Parser NoteFilter
     parser = do

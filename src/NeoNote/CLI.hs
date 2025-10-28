@@ -26,7 +26,7 @@ data CLI :: Effect where
   Editor :: NonEmpty Note -> CLI m (NonEmpty NoteContent)
   Pick :: NoteFilter -> Text -> (Maybe PickedAction -> m Bool) -> CLI m ()
   Prompt :: Prompt a -> CLI m a
-  DisplayNotes :: NoteFilter -> OrderBy NoteAttribute -> Int -> [NoteAttribute] -> CLI m ()
+  DisplayNotes :: [NoteAttribute] -> Ordered NoteInfo -> CLI m ()
   DisplayNote :: Bool -> Note -> CLI m ()
 
 makeEffect ''CLI
@@ -39,6 +39,6 @@ runCLI = interpret $ \env uiEffect -> do
     Pick noteFilter searchTerm handlePickedAction -> localSeqUnlift env $ \unlift ->
       picker noteFilter searchTerm (unlift . handlePickedAction)
     Prompt promptType -> askPrompt promptType
-    DisplayNotes noteFilter orderBy displayAmount noteAttributes ->
-      displayNotesInTerminal noteFilter orderBy displayAmount noteAttributes
+    DisplayNotes noteAttributes notes ->
+      displayNotesInTerminal noteAttributes notes
     DisplayNote plain note -> displayNoteInTerminal plain note

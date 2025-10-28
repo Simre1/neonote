@@ -11,7 +11,7 @@ import Effectful.Dispatch.Dynamic
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
 import NeoNote.Note.Note
-import NeoNote.Time (GetTime, Time, addDays, getCurrentTime, timeFromString, timeToString)
+import NeoNote.Time (GetTime, Time, addDays, formatTime, getCurrentTime, timeFromString)
 import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesFileExist, getXdgDirectory, removeDirectoryRecursive)
 import System.FilePath (joinPath)
 
@@ -31,7 +31,7 @@ runCache = interpret $ \env (Cache kind noteInfo computeItem) -> do
   cacheDir <- liftIO $ getXdgDirectory XdgCache "neonote"
   liftIO $ cleanCache currentTime cacheDir
   let prefix = hash notesPath
-      modifiedString = T.replace " " "" $ timeToString $ noteInfo.modified
+      modifiedString = T.replace " " "" $ formatTime $ noteInfo.modified
       idString = noteIdToText $ noteInfo.id
       fileName = [i|#{prefix}-#{idString}-#{modifiedString}-#{kind}|]
       filePath = joinPath [cacheDir, fileName]
@@ -60,7 +60,7 @@ cleanCache currentTime cacheDir = do
     cleanFiles = do
       removeDirectoryRecursive cacheDir
       createDirectoryIfMissing True cacheDir
-      T.writeFile lastCacheCleanFile $ timeToString currentTime
+      T.writeFile lastCacheCleanFile $ formatTime currentTime
     lastCacheCleanFile :: FilePath
     lastCacheCleanFile = joinPath [cacheDir, "lastCacheClean"]
 

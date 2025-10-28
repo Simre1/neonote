@@ -7,7 +7,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Effectful
 import NeoNote.Note.Note
-import NeoNote.Time (timeToString)
+import NeoNote.Time (formatTime)
 import Optics.Core
 
 data Prompt a where
@@ -17,7 +17,7 @@ promptQuestion :: Prompt a -> Text
 promptQuestion (AreYouSureDeletion notes) = [i|Do you really want to delete the following notes :\n#{foldMap notesText notes}|]
   where
     notesText :: Note -> Text
-    notesText (Note noteInfo noteContent) = [i|- #{timeToString $ noteInfo ^. #modified}: #{noteContentPreview noteContent}\n|]
+    notesText (Note noteInfo noteContent) = [i|- #{formatTime $ noteInfo ^. #modified}: #{noteContentPreview noteContent}\n|]
 
 askConfirmation :: (IOE :> es) => Eff es Bool
 askConfirmation = do
