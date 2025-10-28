@@ -10,7 +10,7 @@ import NeoNote.Store.Database.Error
 data NeoNoteError
   = CannotParseFilter Text Text
   | EditingCrashed SomeException
-  | SearchUICrashed SomeException
+  | PickerCrashed SomeException
   | FileAccessFailed SomeException
   | DatabaseError DatabaseError CallStack
   deriving (Show, Generic)

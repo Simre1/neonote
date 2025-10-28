@@ -20,8 +20,8 @@ import Optics.Core
 
 displayNotesInTerminal :: (IOE :> es) => [NoteAttribute] -> Ordered NoteInfo -> Eff es ()
 displayNotesInTerminal attributes orderedNoteInfos = do
-  let header = makeTitle <$> attributes
-      rows = header : [attributeToCell noteInfo <$> attributes | noteInfo <- orderedNoteInfos ^. #list]
+  let _header = makeTitle <$> attributes
+      rows = [attributeToCell noteInfo <$> attributes | noteInfo <- orderedNoteInfos ^. #list]
       tableText = renderTable rows
   liftIO $ TL.putStrLn tableText
   where
