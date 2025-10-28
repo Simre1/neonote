@@ -136,7 +136,7 @@ paths :: Parser [FilePath]
 paths = many $ strArgument (help "Note path" <> metavar "Note paths")
 
 exportPath :: Parser (Maybe FilePath)
-exportPath = optional $ option auto (short 'o' <> long "output" <> help "Export directory")
+exportPath = optional $ strOption (short 'o' <> long "output" <> help "Export directory")
 
 searchText :: Parser Text
 searchText = strArgument (value "" <> help "Search text" <> metavar "Search text")

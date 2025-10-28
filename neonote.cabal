@@ -52,7 +52,6 @@ library
     exposed-modules:  
         Data.List.SafeIndex
         Data.Functor.Empty
-
         NeoNote.Run
         NeoNote.Note.Highlight
         NeoNote.Note.Note
