@@ -2,7 +2,7 @@ module NeoNote.Time where
 
 import Control.Applicative (Alternative ((<|>)))
 import Data.Text (Text, pack, unpack)
-import Data.Time (UTCTime, defaultTimeLocale, formatTime, parseTimeM)
+import Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
 import Data.Time qualified as Time
 import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 import Effectful

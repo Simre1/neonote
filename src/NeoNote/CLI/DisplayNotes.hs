@@ -1,20 +1,15 @@
 module NeoNote.CLI.DisplayNotes where
 
-import Control.Monad (forM_)
 import Data.Coerce (coerce)
-import Data.List (intersperse, sortBy, transpose)
-import Data.Text (Text, unpack)
+import Data.List (intersperse, transpose)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.Builder qualified as B
 import Data.Text.Lazy.IO qualified as TL
 import Effectful
-import Effectful.Error.Dynamic (Error)
 import NeoNote.Data.Id (idToText)
-import NeoNote.Error (NeoNoteError)
-import NeoNote.Log
 import NeoNote.Note.Note
-import NeoNote.Store.Note (NoteStore, findNotes, readNote, readNoteInfo)
 import NeoNote.Time
 import Optics.Core
 

@@ -20,10 +20,8 @@ import Effectful.Error.Dynamic
 import GHC.Generics
 import Graphics.Vty qualified as Vty
 import NeoNote.Error
-import NeoNote.Log
 import NeoNote.Note.Highlight (Highlight, highlight)
 import NeoNote.Note.Note
-import NeoNote.Store.Note
 import NeoNote.Time
 import Optics.Core
 

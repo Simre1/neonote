@@ -15,6 +15,7 @@ import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
 import NeoNote.Configuration
+import NeoNote.Data.Id (idToText)
 import NeoNote.Error
 import NeoNote.Note.Note
 import NeoNote.Store.Database.Error
@@ -68,6 +69,9 @@ runDatabase eff = do
     noteFilterToCondition (HasTag tag) = do
       param <- newParam $ coerce tag
       pure [__i| (exists ( select noteId, tag from tags where id = noteId and tag = #{param})) |]
+    noteFilterToCondition (HasId id) = do
+      param <- newParam $ idToText id
+      pure [__i| (id = #{param}) |]
     --
     noteFilterToCondition (EqualDate d1 d2) = pure $ dateLiteralToCondition "=" d1 d2
     noteFilterToCondition (AfterDate d1 d2) = pure $ dateLiteralToCondition ">" d1 d2

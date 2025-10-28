@@ -7,7 +7,7 @@ import Data.Set qualified as S
 import Data.Text
 import Data.Text qualified as T
 import Data.Void (Void)
-import Debug.Trace
+import NeoNote.Data.Id (idAlphabet, looksLikeId, parseId)
 import NeoNote.Note.Note
 import NeoNote.Time
 import Text.Megaparsec (choice)
@@ -45,6 +45,11 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
             guard $ T.last tagString /= '-'
             guard $ not $ tagString `S.member` S.fromList ["created", "c", "modified", "c"]
             pure $ HasTag $ Tag tagString
+          idP = P.try $ do
+            _ <- P.char '@'
+            idString <- lexeme $ P.takeWhile1P (Just "Id") (`S.member` idAlphabet)
+            id <- maybe (fail "Not an Id string") pure (parseId idString)
+            pure $ HasId id
           timeP = P.try $ do
             d1 <- dateParser currentTime
             operation <- lexeme $ EqualDate <$ P.char '=' <|> AfterDate <$ P.char '>' <|> BeforeDate <$ P.char '<'
@@ -71,7 +76,7 @@ parseNoteFilter currentTime = first (pack . P.errorBundlePretty) . P.parse parse
             _ <- P.char ')'
             pure p
           andOrP = chainl1 nonLeftRecursiveP (lexeme $ And <$ P.char '&' <|> Or <$ P.char '|' <|> pure Together)
-          nonLeftRecursiveP = bracketsP <|> tagP <|> everynoteP <|> notP <|> timeP <|> containsP
+          nonLeftRecursiveP = bracketsP <|> tagP <|> idP <|> everynoteP <|> notP <|> timeP <|> containsP
           combinedP = andOrP <|> nonLeftRecursiveP
       choice
         [ do

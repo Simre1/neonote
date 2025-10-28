@@ -26,7 +26,7 @@ data DateLiteral
 
 data NoteFilter
   = HasTag Tag
-  | HasId Text
+  | HasId Id
   | EqualDate DateLiteral DateLiteral
   | AfterDate DateLiteral DateLiteral
   | BeforeDate DateLiteral DateLiteral
