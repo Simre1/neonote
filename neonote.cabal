@@ -60,7 +60,6 @@ library
         NeoNote.Data.Id
         NeoNote.Store.Database
         NeoNote.Store.Database.Error
-        NeoNote.Store.Files
         NeoNote.Store.Note
         NeoNote.Cache
         NeoNote.Configuration
