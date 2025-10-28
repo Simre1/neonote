@@ -154,23 +154,11 @@ runAddNotesAction paths = do
 
 runExportNotesAction :: (IOE :> es, MakeId :> es, GetTime :> es, NoteStore :> es, Error NeoNoteError :> es) => Maybe FilePath -> Text -> Eff es ()
 runExportNotesAction maybePath text = do
-  dirPath <- case maybePath of
-    Just path -> pure path
-    Nothing -> do
-      cwd <- liftIO getCurrentDirectory
-      time <- getCurrentTime
-      pathId <- makeId
-      let prefix = "neonote-export" <> "-" <> idToText pathId
-      let timestamp = formatTimestamp prefix time
-      let dirPath = cwd </> T.unpack timestamp
-      pure dirPath
-
-  liftIO $ createDirectoryIfMissing True dirPath
-
   noteFilter <- makeNoteFilter text
   noteIds <- findNotes noteFilter
   notes <- readNotes noteIds
 
+  dirPath <- createDir maybePath
   liftIO $ forM_ notes $ \note -> do
     let filepath = dirPath </> (T.unpack $ noteFileName $ note ^. #info)
     T.writeFile filepath (note ^. #content % coerced)
@@ -181,3 +169,18 @@ makeNoteFilter searchText = do
   case parseNoteFilter time searchText of
     Left err -> throwError (CannotParseFilter searchText err)
     Right noteFilter -> pure noteFilter
+
+createDir :: (GetTime :> es, MakeId :> es, IOE :> es) => Maybe FilePath -> Eff es FilePath
+createDir maybePath = do
+  dirPath <- case maybePath of
+    Just path -> pure path
+    Nothing -> do
+      cwd <- liftIO getCurrentDirectory
+      time <- getCurrentTime
+      pathId <- makeId
+      let prefix = "neonote-export" <> "-" <> idToText pathId
+      let timestamp = formatTimestamp prefix time
+      pure $ cwd </> T.unpack timestamp
+
+  liftIO $ createDirectoryIfMissing True dirPath
+  pure dirPath
