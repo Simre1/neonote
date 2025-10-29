@@ -7,6 +7,7 @@ import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void (Void)
+import Debug.Trace
 import NeoNote.Note.Note
 import NeoNote.Time
 import Text.Megaparsec qualified as P
@@ -18,19 +19,33 @@ type Parser = P.Parsec Void Text
 lexeme :: Parser a -> Parser a
 lexeme = P.lexeme $ whitespaceP
 
+lexemeLine :: Parser a -> Parser a
+lexemeLine = P.lexeme lineWhitespaceP
+
+lineWhitespaceP :: Parser ()
+lineWhitespaceP =
+  void $
+    P.takeWhileP
+      (Just "Line whitespace")
+      (\c -> c <= ' ' && c /= '\n')
+
 whitespaceP :: Parser ()
 whitespaceP = void $ P.takeWhileP (Just "Whitespace") (<= ' ')
 
 fieldNameP :: Parser FieldName
 fieldNameP = P.try $ do
-  text <- P.takeWhile1P (Just "Field") (`S.member` characters)
-  guard $ T.head text /= '-'
-  guard $ T.last text /= '-'
-  guard $ not $ text `S.member` S.fromList ["created", "c", "modified", "c"]
+  text <- P.takeWhile1P (Just "Field") isSafeChar
+  guard $ S.notMember (T.head text) specialCharacters
+  guard $ S.notMember (T.head text) specialCharacters
+  guard $ not $ text `S.member` S.fromList ["created", "c", "modified", "c", "id"]
   pure $ FieldName text
   where
-    characters :: S.Set Char
-    characters = S.fromList $ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['-']
+
+isSafeChar :: Char -> Bool
+isSafeChar c = isAlphaNum c || S.member c specialCharacters
+
+specialCharacters :: S.Set Char
+specialCharacters = S.fromList $ "-+_?."
 
 quotedStringP :: Parser Text
 quotedStringP = do
@@ -40,19 +55,13 @@ quotedStringP = do
   pure $ innerText
 
 wordP :: Parser Text
-wordP = P.takeWhile1P (Just "Single word") isAlphaNum
+wordP = P.takeWhile1P (Just "Single word") isSafeChar
 
 intP :: Parser Int
 intP = P.decimal
 
-dateP :: Time -> Parser DateLiteral
-dateP _ = do
-  DateLiteralTime
-    <$> dayP
-      <|> DateLiteralTime
-    <$> timeOfDayP
-      <|> createdP
-      <|> modifiedP
+timeP :: Time -> Parser IncompleteTime
+timeP _ = dayP <|> timeOfDayP
   where
     dayP :: Parser IncompleteTime
     dayP = P.try $ do
@@ -63,12 +72,6 @@ dateP _ = do
     timeOfDayP = P.try $ do
       timeOfDayString <- P.takeP (Just "Day") 8
       maybe (fail "Time of day could not be parsed") pure (timeOfDayFromString timeOfDayString)
-
-    createdP :: Parser DateLiteral
-    createdP = DateLiteralCreated <$ (P.string "created" <|> P.string "c")
-
-    modifiedP :: Parser DateLiteral
-    modifiedP = DateLiteralModified <$ (P.string "modified" <|> P.string "m")
 
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl1 p op = do
@@ -81,3 +84,8 @@ chainl1 p op = do
         y <- p
         rest (f x y)
         <|> return x
+
+message :: String -> Parser ()
+message str = do
+  !() <- traceShow str (pure ())
+  pure ()

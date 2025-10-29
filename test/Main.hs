@@ -78,19 +78,19 @@ addMultipleNotes = testCase "Add multiple notes" $ do
     notesPath <- getConfiguration #notesPath
     liftIO $ do
       T.writeFile (notesPath </> "1.md") "Note1"
-      T.writeFile (notesPath </> "2.md") "Note2 #my-tag"
+      T.writeFile (notesPath </> "2.md") "---\nmy-tag\n---\nNote2"
       T.writeFile (notesPath </> "3.md") "Note3"
     handleAction (Action.AddNotes ((notesPath </>) <$> ["1.md", "2.md", "3.md"]))
     allNotes <- findNotes EveryNote >>= traverse readNote
-    tagNote <- findNotes (HasTag (Tag "my-tag")) >>= traverse readNote
+    tagNote <- findNotes (HasField (FieldName "my-tag")) >>= traverse readNote
     pure $ (S.fromList $ allNotes ^. mapping #content, tagNote ^. mapping #content)
 
   fakeOutput ^. #logs @?= [NotesAdded]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
     Right (allNotes, tagNote) -> do
-      allNotes @?= S.fromList [NoteContent "Note1", NoteContent "Note2 #my-tag", NoteContent "Note3"]
-      tagNote @?= [NoteContent "Note2 #my-tag"]
+      allNotes @?= S.fromList [NoteContent "Note1", NoteContent "Note2", NoteContent "Note3"]
+      tagNote @?= [NoteContent "Note2"]
   where
     fakeData = FakeData {defaultExtension = "md", editorWrites = ["test2", "3"]}
 
@@ -114,43 +114,43 @@ editSingleNote = testCase "Single note" $ do
 singleTag :: TestTree
 singleTag = testCase "Single tag" $ do
   fakeOutput <- runFakeIO fakeData $ do
-    handleAction (Action.CreateNote True "#test")
-    noteIds <- findNotes (HasTag (Tag "test"))
+    handleAction (Action.CreateNote True "---\ntest\n---")
+    noteIds <- findNotes (HasField (FieldName "test"))
     notes <- traverse readNote noteIds
     pure $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
-    Right a -> a @?= [NoteContent "#test"]
+    Right a -> a @?= [NoteContent ""]
   where
     fakeData = FakeData {defaultExtension = "md", editorWrites = []}
 
 hyphenatedTag :: TestTree
 hyphenatedTag = testCase "Hyphenated tag" $ do
   fakeOutput <- runFakeIO fakeData $ do
-    handleAction (Action.CreateNote True "#test-tag")
-    noteIds <- findNotes (HasTag (Tag "test-tag"))
+    handleAction (Action.CreateNote True "---\ntest-tag\n---")
+    noteIds <- findNotes (HasField (FieldName "test-tag"))
     notes <- traverse readNote noteIds
     pure $ notes ^. mapping #content
 
   fakeOutput ^. #logs @?= [NoteCreated]
   case fakeOutput ^. #output of
     Left _ -> assertFailure "Unexpected NeoNoteError"
-    Right a -> a @?= [NoteContent "#test-tag"]
+    Right a -> a @?= [NoteContent ""]
   where
     fakeData = FakeData {defaultExtension = "md", editorWrites = []}
 
 manyTags :: TestTree
 manyTags = testCase "Many tags" $ do
   fakeOutput <- runFakeIO fakeData $ do
-    handleAction (Action.CreateNote True "#one")
-    handleAction (Action.CreateNote True "#one #two")
-    handleAction (Action.CreateNote True "#one #two #three")
+    handleAction (Action.CreateNote True "---\none\n---")
+    handleAction (Action.CreateNote True "---\none\ntwo\n---")
+    handleAction (Action.CreateNote True "---\none\ntwo\nthree\n---")
 
-    noteIdsOne <- findNotes (HasTag (Tag "one"))
-    noteIdsOneTwo <- findNotes (And (HasTag $ Tag "one") (HasTag $ Tag "two"))
-    noteIdsNoThree <- findNotes (Not $ HasTag (Tag "three"))
+    noteIdsOne <- findNotes (HasField (FieldName "one"))
+    noteIdsOneTwo <- findNotes (And (HasField $ FieldName "one") (HasField $ FieldName "two"))
+    noteIdsNoThree <- findNotes (Not $ HasField (FieldName "three"))
 
     pure $ length <$> [noteIdsOne, noteIdsOneTwo, noteIdsNoThree]
 
@@ -164,10 +164,10 @@ manyTags = testCase "Many tags" $ do
 updateTagAfterEdit :: TestTree
 updateTagAfterEdit = testCase "Update tag after edit" $ do
   fakeOutput <- runFakeIO fakeData $ do
-    handleAction (Action.CreateNote True "no tag")
+    handleAction (Action.CreateNote True "-")
     handleAction (Action.EditNote 1 "")
 
-    noteIds <- findNotes (HasTag (Tag "test"))
+    noteIds <- findNotes (HasField (FieldName "test"))
     pure $ length noteIds
 
   fakeOutput ^. #logs @?= [NoteCreated, NoteEdited]
@@ -175,14 +175,14 @@ updateTagAfterEdit = testCase "Update tag after edit" $ do
     Left _ -> assertFailure "Unexpected NeoNoteError"
     Right a -> a @?= 1
   where
-    fakeData = FakeData {defaultExtension = "md", editorWrites = [" #test"]}
+    fakeData = FakeData {defaultExtension = "md", editorWrites = ["--\ntest\n---"]}
 
 after2020 :: TestTree
 after2020 = testCase "After 2020" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "test")
 
-    noteIds <- findNotes (AfterDate DateLiteralCreated (DateLiteral (mempty & #year ?~ 2020)))
+    noteIds <- findNotes (Check Greater (DateLiteral DateLiteralCreated) (DateLiteral $ DateLiteralTime (mempty & #year ?~ 2020)))
 
     pure $ length noteIds
 
@@ -198,14 +198,14 @@ modificationChangesDate = testCase "Modification changes date" $ do
   fakeOutput <- runFakeIO fakeData $ do
     handleAction (Action.CreateNote True "test")
 
-    unmodifiedNoteIds <- findNotes (EqualDate DateLiteralCreated DateLiteralModified)
+    unmodifiedNoteIds <- findNotes (Check Equal (DateLiteral DateLiteralCreated) (DateLiteral DateLiteralModified))
     unmodifiedNoteInfos <- traverse readNoteInfo unmodifiedNoteIds
 
     liftIO $ threadDelay 1000000
 
-    mapM_ (`writeNote` NoteContent "new content") unmodifiedNoteInfos
+    mapM_ (`writeNote` RawNote "new content") unmodifiedNoteInfos
 
-    modifiedNoteIds <- findNotes (BeforeDate DateLiteralCreated DateLiteralModified)
+    modifiedNoteIds <- findNotes (Check Lesser (DateLiteral DateLiteralCreated) (DateLiteral DateLiteralModified))
 
     pure $ length <$> [unmodifiedNoteIds, modifiedNoteIds]
 

@@ -33,14 +33,14 @@ displayNotesInTerminal attributes orderedNoteInfos = do
     attributeToCell noteInfo AttributeCreated = formatDate $ noteInfo ^. #created
     attributeToCell noteInfo AttributeModified = formatDate $ noteInfo ^. #modified
     attributeToCell noteInfo AttributeExtension = noteInfo ^. #extension
-    attributeToCell noteInfo AttributeTags =
+    attributeToCell noteInfo AttributeProperties =
       let tagString = concatFields $ noteInfo ^. #fields
        in if tagString == "" then "-" else tagString
     makeTitle AttributeId = "id"
     makeTitle AttributeCreated = "created"
     makeTitle AttributeModified = "modified"
     makeTitle AttributeExtension = "extension"
-    makeTitle AttributeTags = "tags"
+    makeTitle AttributeProperties = "properties"
     padSpaces maxWidth t =
       let n = max 0 $ maxWidth - T.length t
        in B.fromText t <> B.fromString (const ' ' <$> [1 .. n])

@@ -108,7 +108,7 @@ pickerApp noteHandler = defaultMain app
           padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))
         previewNote = padBottom Max $ padAll 1 $ padRight Max $ txt $ fromMaybe "" $ do
           coerce $ st ^. #previewedNote
-        infos = txt "edit: enter, view: ctrl-y, delete: ctrl-x, exit: esc/ctrl-c"
+        infos = txt ""
 
     appEvent :: T.BrickEvent Text () -> T.EventM Text UIState ()
     appEvent ev = case ev of
@@ -119,19 +119,19 @@ pickerApp noteHandler = defaultMain app
         modify $ \state ->
           state
             & #result
-            .~ (PickedEdit $ selectedNoteInfo state)
+            .~ (maybe PickedNothing PickedEdit $ selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'x') [Vty.MCtrl])) -> do
         modify $ \state ->
           state
             & #result
-            .~ (PickedDelete $ selectedNoteInfo state)
+            .~ (maybe PickedNothing PickedEdit $ selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey (Vty.KChar 'y') [Vty.MCtrl])) -> do
         modify $ \state ->
           state
             & #result
-            .~ (PickedView $ selectedNoteInfo state)
+            .~ (maybe PickedNothing PickedEdit $ selectedNoteInfo state)
         M.halt
       (T.VtyEvent (Vty.EvKey Vty.KUp [])) -> do
         modify $ #position %~ max 0 . pred
@@ -177,8 +177,8 @@ theMap =
 getSearchTerm :: UIState -> Text
 getSearchTerm = T.strip . T.unlines . E.getEditContents . view #searchTerm
 
-selectedNoteInfo :: UIState -> NoteInfo
-selectedNoteInfo st = (st ^. #filteredNotes) !! (st ^. #position)
+selectedNoteInfo :: UIState -> Maybe NoteInfo
+selectedNoteInfo st = (st ^. #filteredNotes) !? (st ^. #position)
 
 refreshNotes :: UINoteHandler -> UIState -> IO UIState
 refreshNotes noteHandler st = do

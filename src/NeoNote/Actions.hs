@@ -20,6 +20,7 @@ data Action
   | ViewNote
       { amount :: Int,
         plain :: Bool,
+        frontmatter :: Bool,
         search :: Text
       }
   | PickNote

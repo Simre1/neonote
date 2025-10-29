@@ -25,7 +25,7 @@ data NoteStore :: Effect where
   DeleteNote :: NoteId -> NoteStore m ()
   ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
   CreateNote :: (NoteInfo -> m RawNote) -> NoteStore m ()
-  BulkCreateNotes :: [(Text, NoteContent)] -> NoteStore m ()
+  BulkCreateNotes :: [(Text, RawNote)] -> NoteStore m ()
 
 makeEffect ''NoteStore
 
@@ -67,15 +67,16 @@ runWriteNote noteInfo noteContent = do
 -- TODO: Delete already existing notes
 -- logMessage NoteEmpty
 
-runWriteNoteNoLogging :: (GetTime :> es, Database :> es) => NoteInfo -> RawNote -> Eff es ()
+runWriteNoteNoLogging :: (GetTime :> es, Database :> es, Log :> es) => NoteInfo -> RawNote -> Eff es ()
 runWriteNoteNoLogging noteInfo rawNote = do
-  let (fields, noteContent) = parseRawNote rawNote
+  let (junk, fields, noteContent) = parseRawNote rawNote
   currentTime <- getCurrentTime
   let updatedNoteInfo =
         noteInfo
-          { tags = S.fromList $ fmap Tag $ M.keys fields,
+          { fields,
             modified = currentTime
           }
+  when (not (Prelude.null junk)) $ logMessage (FrontmatterJunk junk)
   dbWriteNote (Note updatedNoteInfo noteContent)
 
 runReadNote :: (Database :> es) => NoteId -> Eff es Note
@@ -99,20 +100,21 @@ runCreateNote env getNoteContent = do
     else do
       logMessage NoteEmpty
 
-runBulkCreateNotes :: (GetTime :> es, Database :> es, MakeId :> es, Log :> es) => [(Text, NoteContent)] -> Eff es ()
+runBulkCreateNotes :: (GetTime :> es, Database :> es, MakeId :> es, Log :> es) => [(Text, RawNote)] -> Eff es ()
 runBulkCreateNotes noteData = do
   currentTime <- getCurrentTime
-  notes <- forM noteData $ \(extension, noteContent) -> do
+  notes <- forM noteData $ \(extension, rawNote) -> do
     noteId <- makeNoteId
-    let tags = undefined
+    let (junk, fields, noteContent) = parseRawNote rawNote
         noteInfo =
           NoteInfo
             { id = noteId,
-              tags = tags,
+              fields = fields,
               extension = extension,
               created = currentTime,
               modified = currentTime
             }
+    when (not (Prelude.null junk)) $ logMessage (FrontmatterJunk junk)
     pure $ Note noteInfo noteContent
   dbWriteNotes notes
   logMessage NotesAdded
@@ -125,7 +127,7 @@ makeNewNoteInfo = do
   pure $
     NoteInfo
       { id = noteId,
-        tags = mempty,
+        fields = Fields mempty,
         extension = extension,
         created = currentTime,
         modified = currentTime

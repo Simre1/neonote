@@ -2,18 +2,27 @@ module NeoNote.Note.Syntax.NoteFilter where
 
 import Control.Applicative (Alternative (..))
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Bifunctor (Bifunctor (..))
 import Data.Char (isAlphaNum)
 import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.IO qualified as T
 import Debug.Trace
+import Effectful (runEff)
 import NeoNote.Data.Id
 import NeoNote.Note.Note
 import NeoNote.Note.Syntax.Common
 import NeoNote.Time
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
+
+parseNoteFilterIO :: Text -> IO NoteFilter
+parseNoteFilterIO txt = runEff $ runGetTime $ do
+  time <- getCurrentTime
+  let result = parseNoteFilter time txt
+  either (\err -> liftIO $ T.putStrLn err >> fail "Parse failed") pure result
 
 parseNoteFilter :: Time -> Text -> Either Text NoteFilter
 parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse parser "note filter string"
@@ -28,13 +37,13 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
             P.choice
               [ do
                   _ <- P.char '#'
-                  fn <- fieldNameP
-                  pure $ FieldLiteral fn,
-                DateLiteral <$> dateP currentTime,
-                do
-                  _ <- P.char '#'
-                  _ <- P.string "id"
-                  pure IdLiteral,
+                  P.choice
+                    [ IdLiteral <$ P.string "id",
+                      DateLiteral DateLiteralCreated <$ (P.string "created" <|> P.string "c"),
+                      DateLiteral DateLiteralModified <$ (P.string "modified" <|> P.string "m"),
+                      FieldLiteral <$> fieldNameP
+                    ],
+                DateLiteral <$> DateLiteralTime <$> timeP currentTime,
                 StringLiteral <$> quotedStringP,
                 IntLiteral <$> intP,
                 StringLiteral <$> wordP
@@ -47,28 +56,17 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
                   Greater <$ P.string ">",
                   Lesser <$ P.string "<",
                   GreaterEqual <$ P.string ">=",
-                  LessserEqual <$ P.string "<="
+                  LesserEqual <$ P.string "<="
                 ]
           checkP = P.try $ do
             lit1 <- literalP
             op <- opP
             lit2 <- literalP
             pure (Check op lit1 lit2)
-
-          -- timeP = P.try $ do
-          --   d1 <- dateP currentTime
-          --   operation <- lexeme $ EqualDate <$ P.char '=' <|> AfterDate <$ P.char '>' <|> BeforeDate <$ P.char '<'
-          --   d2 <- dateP currentTime
-          --   pure $ operation d1 d2
           containsP =
             P.choice
               [ lexeme $
                   Contains <$> quotedStringP,
-                -- do
-                --   _ <- P.char '\"'
-                --   f <- lexeme $ P.takeWhile1P (Just "Quoted Search fragment") (> ' ')
-                --   _ <- P.char '\"'
-                --   pure $ Contains f,
                 fmap
                   Contains
                   $ lexeme
@@ -81,8 +79,16 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
             p <- combinedP
             _ <- lexeme $ P.char ')'
             pure p
-          andOrP = chainl1 nonLeftRecursiveP (lexeme $ And <$ P.char '&' <|> Or <$ P.char '|' <|> pure Together)
-          nonLeftRecursiveP = bracketsP <|> everynoteP <|> notP <|> checkP <|> hasFieldP <|> containsP
+          andOrP =
+            chainl1 nonLeftRecursiveP $
+              lexeme $
+                P.choice
+                  [ And <$ (void (P.string "&&") <|> void (P.char '&')),
+                    Or <$ (void (P.string "||") <|> void (P.char '|')),
+                    pure Together
+                  ]
+          nonLeftRecursiveP = do
+            bracketsP <|> everynoteP <|> notP <|> checkP <|> hasFieldP <|> containsP
           combinedP = andOrP <|> nonLeftRecursiveP
       P.choice
         [ do

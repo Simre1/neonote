@@ -1,15 +1,17 @@
 # NeoNote
 
-NeoNote is a terminal app to manage your notes. NeoNote stores your notes for you and provides filtering and searching options to find them easily.
+NeoNote is a terminal app to manage notes.
+The main goal is to speed up note-taking by cutting down on all but the essential tasks. It stores your notes for you and provides filtering and searching options to organize them semi-automatically.
 
-![Animated showcase of NeoNote](recordings/showcase.gif)
-Video is for version 0.1.0!
+![Animated showcase of NeoNote](recordings/showcase_0.3.0.0.gif)
 
 ## Features
 
 - Create/Edit/Delete Notes
-- Parses tags directly from your note
-- Filter notes based on tags, searches and creation/modification date
+- Import/Export notes (-> no lock-in to NeoNote)
+- Filter notes based on metadata, full text search and creation/modification date
+- Use boolean logic to combine multiple filter conditions
+- Dump your notes to the console for use in other programs
 
 ## Installation
 
@@ -31,7 +33,7 @@ Then, you will find the executable inside the `dist-newstyle` folder.
 ## Get Started
 
 Take a look at the NeoNote help menu to get a quick overview of the commands and to explore the various options.
-Each command can be shortened to one letter, eg. `nn c` instead of `nn create`.
+Most commands can be shortened to one letter, eg. `nn c` instead of `nn create`.
 
 ### Create a note
 
@@ -39,12 +41,32 @@ Each command can be shortened to one letter, eg. `nn c` instead of `nn create`.
 nn create
 ```
 
-An editor will open where you can write your note.
-Tags will be automatically found when you use the `#` symbol within a note.
-You can also start composing your note directly in the terminal by just typing the text:
+An editor will open where you can write your note. You can also start composing your note directly in the terminal by just typing the text:
+
 ```bash
-nn c "Your first note with #neonote"
+nn c "Your first note with NeoNote"
 ```
+
+### Frontmatter
+
+NeoNote stores metadata for your notes, which you can edit in the frontmatter.
+
+```md
+---
+answer: 42
+foo: bar
+my-tag
+---
+
+here is the content of the note
+```
+
+The frontmatter is surrounded by `---` delimiters. In the frontmatter, each line stores a simple key value property.
+The field `answer` has value `42`, `foo` has value `bar` and `my-tag` has no value. Although `my-tag` has no value, it is still present and essentially serves as a tag.
+
+Field names and values may contain alphanumerical characters and the special characters "-+_?.". For field names, special characters may not be at the start or at the end. Also, "created", "c", "modified" and "m" are reserved keywords any may not be used for field names.
+
+Field values may only contain simple data: a single number, a single word or a string enclosed by `"`. In the future, I might add more complex types (e.g. dates or lists).
 
 ### Using the note picker
 
@@ -54,7 +76,7 @@ To review already existing notes, you will normally use the picker UI. It can be
 nn pick
 ```
 
-Within this UI, you can incrementally search through your notes. It is possible to edit with `ENTER`, delete with `CTRL-X` and view with `CTRL-Y`.
+Within this UI, you can incrementally search through your notes. It is possible to edit with `ENTER`, delete with `CTRL-X` and print to console with `CTRL-Y`.
 
 ### Processing notes without the picker
 
@@ -74,7 +96,7 @@ nn edit --number 3 todo
 
 Similarly to the `edit` command, there exist `delete` and `view` commands to delete and view multiple notes.
 
-This will delete up to a hundred notes with the tag `#archived`.
+This will delete up to a hundred notes with the property  `#archived`.
 ```
 nn delete --number 100 "#archived" 
 ```
@@ -86,32 +108,31 @@ nn view --number 10 linux
 
 ### List notes
 
-The `list` command gives you an overview of your notes by printing them in a table. It gives you information about their modification date and their tags.
+The `list` command essentially functions as a way to print note metadata in a machine-readable way. It can give you information about note ids, properties and modification/creation dates. 
 
 ```
 nn list
 ```
 
-Per default, the modification date, the tags and a preview of the content is shown.
+Per default, it lists the ids of the 10 most recently modified notes.
+
 You can change which attributes of the note are shown with `--attribute` (`-a` for short):
 
 ```
-nn list --attribute id --attribute created
+nn list --attribute id --attribute created --attribute properties
 ```
 
-Now, `id` and `created` will be shown instead of the default `modified` and `tags`.
-The content preview will always be shown regardless of given attributes.
+Now, in addition to the id, the creation date and the properties will be shown. This command can also be shortened:
+```
+nn l -a i -a c -a p
+```
 
-Of course, you can combine this normal filtering and searching. The following
+
+You can combine this with filtering and searching. The following
 command will list up to 5 notes with the word haskell. 
 ```
-nn l --number 5 haskell
+nn list --number 5 haskell
 ```
-
-## Tags
-
-You can add a tag to your notes simply by writing `#your-tag` somewhere within the note.
-Currently, tags may consist of english characters as well as `-` (no numbers!).
 
 ## Filter notes
 
@@ -122,47 +143,66 @@ nn view "programming"
 ```
 
 This will show you notes which contain the word `programming`.
-This can also be used with `delete`, `edit` and `list`.
+This can also be used with `delete`, `edit`, `list` and `pick`.
 
 ### Boolean logic for filtering
 
 - `*` matches every note
-- `a & b` matches if both `a` and `b` match
-- `a | b` matches if either `a` or `b` matches
 - `~ a` matches if `a` does not match
-- `#my-tag` matches if note contains #my-tag
+- `a | b` matches if either `a` or `b` matches
+- `a & b` matches if both `a` and `b` match
+- `a b` matches if both `a` and `b` match. Currently, `a b` is the same as `a & b`.
+- `#foo` matches if note contains the property `foo`, no matter its value
+- `#foo=bar` matches if note contains the property `foo` with value `bar`
+- `#foo>4` matches if note contains the property `foo` with a value greater than `4`. Supported comparison operators are `=`, `>`, `<`, `>=`, and `<=`.
 - `foo` matches if note contains the string foo
 - Use brackets (`(a)`) to group expressions
 - Use quotes (`"%many +words$"`) to escape search strings and search for special characters
 
+Here are a few examples:
+
 ```
 nn view "*" # matches everything
-nn view "#programming & ~html" # matches notes with the tag programming without the word html
-nn view "#programming | #coding" # matches notes with either the tag programming or the tag coding
-nn view "(#programming | #coding) & ~html" # combine expressions with brackets
+nn view "#programming & ~html" # matches notes with the property programming without the word html
+nn view "#programming | #coding" # matches notes with either the property programming or the property coding
+nn view "(#programming | #coding) & ~html" # matches programming/coding notes without html
 ```
 
 ### Date filters
 
-In addition to filtering for tags, you can also filter based on the creation and modification date of a note.
+In addition to searching for properties/full text, you can also filter based on the creation and modification date of a note.
 
-- `>`, `<`, `=` operators for dates
-- `created` and `modified` literal to access the date of a note
+- `#created` and `#modified` literals to access the date of a note
 - `YYYY-MM-DD` for day literals
 - `HH-MM-SS` for time literals
 
 ```
-nn view "created = 2023-07-01" # matches all notes created on 2023-07-01
-nn view "modified = 2023-07-01" # matches all notes modified on 2023-07-01
-nn view "modified > 2023-07-01" # matches all notes modified after 2023-07-01
-nn view "modified < 2023-07-01" # matches all notes modified before 2023-07-01
-nn view "modified > 2023-05-30 & modified < 2023-07-01" # matches all notes modified in June 2023
-nn view "modified > 2023-07-01 & #programming" # matches all notes modified after 2023-07-01 with the tag programming
-nn view "modified > 10:30:00" # matches all notes modified after 10:30:00
+nn view "#created = 2023-07-01" # matches all notes created on 2023-07-01
+nn view "#modified = 2023-07-01" # matches all notes modified on 2023-07-01
+nn view "#modified > 2023-07-01" # matches all notes modified after 2023-07-01
+nn view "#modified < 2023-07-01" # matches all notes modified before 2023-07-01
+nn view "#modified > 2023-05-30 & modified < 2023-07-01" # matches all notes modified in June 2023
+nn view "#modified > 2023-07-01 & #programming" # matches all notes modified after 2023-07-01 with the tag programming
+nn view "#modified > 10:30:00" # matches all notes modified after 10:30:00
 ```
+
+You can shorten the date keywords to `#c` and `#m` respectively.
 
 In the future, less restrictive date specifications might be possible.
 For example, you could apply the filter `modified = July` or `created = around 10am`.
+
+## Importing/Exporting
+
+```
+nn import file1 file2 file3...
+```
+
+Importing notes is the same as creating the files one by one and copy-pasting their contents into the editor.
+
+```
+nn export <note filter>
+```
+Exporting notes will dump all filtered notes into a single folder. Thus, it is possible to use other tools to manage your notes.
 
 ## Configuration
 
@@ -189,3 +229,5 @@ Here are some example editor configurations:
 - Nano: `nano` or `nano %`
 - VSCode: `code --wait` or `code --wait %`
 - VSCodium: `codium --wait` or `code --wait %`
+
+If you have not set any editor, NeoNote will default to the editor set in the `EDITOR` environment variable or fall back to `vim`.

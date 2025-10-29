@@ -29,15 +29,15 @@ data Comparison
   | Greater
   | Lesser
   | GreaterEqual
-  | LessserEqual
+  | LesserEqual
   deriving (Eq, Ord, Show, Generic)
 
 data NoteFilter
   = HasField FieldName
   | Check Comparison Literal Literal
   | Not NoteFilter
-  | And NoteFilter NoteFilter
   | Together NoteFilter NoteFilter
+  | And NoteFilter NoteFilter
   | Or NoteFilter NoteFilter
   | Contains Text
   | EveryNote
@@ -51,9 +51,13 @@ data Literal
   | IntLiteral Int
   deriving (Eq, Ord, Show, Generic)
 
-data Value = NoValue | StringValue Text | IntValue Int deriving (Eq, Ord, Show)
+data Value
+  = NoValue
+  | StringValue Text
+  | IntValue Int
+  deriving (Eq, Ord, Show)
 
-newtype FieldName = FieldName {text :: Text} deriving (Eq, Ord, Show, Generic)
+newtype FieldName = FieldName {name :: Text} deriving (Eq, Ord, Show, Generic)
 
 newtype Fields = Fields {kv :: M.Map FieldName Value} deriving (Eq, Ord, Show, Generic)
 
@@ -81,7 +85,7 @@ data NoteAttribute
   | AttributeCreated
   | AttributeModified
   | AttributeExtension
-  | AttributeTags
+  | AttributeProperties
   deriving (Show, Eq, Generic, Ord)
 
 hasContent :: RawNote -> Bool
@@ -101,7 +105,7 @@ orderNote noteAttribute info1 info2 = case noteAttribute of
   AttributeCreated -> compareField #created
   AttributeModified -> compareField #modified
   AttributeExtension -> compareField #extension
-  AttributeTags -> compareField #fields
+  AttributeProperties -> compareField #fields
   where
     compareField :: (Ord a) => Lens' NoteInfo a -> Ordering
     compareField field = compare (info2 ^. field) (info1 ^. field)

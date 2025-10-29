@@ -40,7 +40,7 @@ data CLI :: Effect where
   Pick :: Text -> PickerCallbacks m -> CLI m ()
   Prompt :: Prompt a -> CLI m a
   DisplayNotes :: [NoteAttribute] -> Ordered NoteInfo -> CLI m ()
-  DisplayNote :: Bool -> Note -> CLI m ()
+  DisplayNote :: Bool -> Bool -> Note -> CLI m ()
 
 makeEffect ''CLI
 
@@ -59,4 +59,4 @@ runCLI = interpret $ \env uiEffect -> do
     Prompt promptType -> askPrompt promptType
     DisplayNotes noteAttributes notes ->
       displayNotesInTerminal noteAttributes notes
-    DisplayNote plain note -> displayNoteInTerminal plain note
+    DisplayNote plain frontmatter note -> displayNoteInTerminal plain frontmatter note

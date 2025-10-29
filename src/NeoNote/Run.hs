@@ -56,7 +56,7 @@ handleAction action = case action of
   Action.EditNote amount searchText -> runEditNoteAction amount searchText
   Action.PickNote searchText -> runPickNoteAction searchText
   Action.DeleteNote amount searchText -> runDeleteNoteAction amount searchText
-  Action.ViewNote amount plain searchText -> runViewNoteAction amount plain searchText
+  Action.ViewNote amount plain frontmatter searchText -> runViewNoteAction amount plain frontmatter searchText
   Action.ListNotes attributesToShow showAmount orderBy searchText ->
     runListNotesAction searchText attributesToShow showAmount orderBy
   Action.AddNotes paths -> runAddNotesAction paths
@@ -104,7 +104,7 @@ runPickNoteAction initialSearchTerm = do
             pure True
           (PickedView noteInfo) -> do
             note <- readNote (noteInfo ^. #id)
-            displayNote False note
+            displayNote False False note
             pure False
           PickedNothing -> pure False,
         findNotes = \searchTerm -> do
@@ -135,8 +135,8 @@ runDeleteNoteAction amount searchTerm = do
       when answer $ do
         mapM_ deleteNote noteIds
 
-runViewNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Bool -> Text -> Eff es ()
-runViewNoteAction amount plain searchTerm = do
+runViewNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Bool -> Bool -> Text -> Eff es ()
+runViewNoteAction amount plain frontmatter searchTerm = do
   noteFilter <- makeNoteFilter searchTerm
   selectedNotes <- take amount <$> findNotes noteFilter
   case selectedNotes of
@@ -144,7 +144,7 @@ runViewNoteAction amount plain searchTerm = do
     noteIds -> do
       forM_ noteIds $ \noteId -> do
         note <- readNote noteId
-        displayNote plain note
+        displayNote plain frontmatter note
 
 runListNotesAction :: (NoteStore :> es, CLI :> es, Error NeoNoteError :> es, GetTime :> es) => Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
 runListNotesAction search noteAttributes showAmount orderBy = do
@@ -162,8 +162,8 @@ runAddNotesAction :: (IOE :> es, NoteStore :> es) => [FilePath] -> Eff es ()
 runAddNotesAction paths = do
   noteData <- forM paths $ \filePath -> do
     let extension = pack $ takeExtension filePath
-    content <- liftIO $ T.readFile filePath
-    pure (extension, NoteContent content)
+    rawContent <- liftIO $ T.readFile filePath
+    pure (extension, RawNote rawContent)
   bulkCreateNotes noteData
 
 runExportNotesAction :: (IOE :> es, MakeId :> es, GetTime :> es, NoteStore :> es, Error NeoNoteError :> es) => Maybe FilePath -> Text -> Eff es ()
@@ -175,7 +175,8 @@ runExportNotesAction maybePath text = do
   dirPath <- createDir maybePath
   liftIO $ forM_ notes $ \note -> do
     let filepath = dirPath </> (T.unpack $ noteFileName $ note ^. #info)
-    T.writeFile filepath (note ^. #content % coerced)
+    let rawNote = noteToRaw note
+    T.writeFile filepath (rawNote ^. coerced)
 
 makeNoteFilter :: (GetTime :> es, Error NeoNoteError :> es) => Text -> Eff es NoteFilter
 makeNoteFilter searchText = do

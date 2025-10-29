@@ -82,6 +82,7 @@ viewAction =
         ( ViewNote
             <$> noteAmount 1
             <*> flag False True (long "plain" <> short 'p' <> help "Get plain output with no highlighting")
+            <*> flag False True (long "frontmatter" <> short 'f' <> help "Include frontmatter in the output")
             <*> searchText
         )
         (progDesc "Filter notes and then view them")
@@ -111,10 +112,10 @@ listAction =
                   noteAttribute
                   ( short 'a'
                       <> long "attribute"
-                      <> help "Note attributes which are shown (id|created|modified|extension|tags). You can use '-a' multiple times"
+                      <> help "Note attributes which are shown (id|created|modified|extension|properties). You can use '-a' multiple times"
                   )
               )
-            <*> noteAmount 8
+            <*> noteAmount 10
             <*> ( Ascending
                     <$> option noteAttribute (long "ascending" <> help "Order notes by attribute in ascending manner")
                       <|> Descending
@@ -166,5 +167,5 @@ noteAttribute =
     <$ maybeReader (guard . (\s -> s == "modified" || s == "m"))
       <|> AttributeExtension
     <$ maybeReader (guard . (\s -> s == "extension" || s == "e"))
-      <|> AttributeTags
-    <$ maybeReader (guard . (\s -> s == "tags" || s == "t"))
+      <|> AttributeProperties
+    <$ maybeReader (guard . (\s -> s == "properties" || s == "p"))
