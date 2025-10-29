@@ -103,7 +103,7 @@ pickerApp noteHandler = defaultMain app
             items -> foldl1 (<=>) items
         drawItem index noteInfo =
           (if index == st ^. #position then withAttr selectedAttr else id) $
-            txt [__i|#{noteIdToText $ noteInfo ^. #id} #{formatDate (noteInfo ^. #modified)}\n#{T.take 30 $ concatTags $ noteInfo ^. #tags}|]
+            txt [__i|#{noteIdToText $ noteInfo ^. #id} #{formatDate (noteInfo ^. #modified)}\n#{T.take 30 $ concatFields $ noteInfo ^. #fields}|]
         searchbar =
           padLeft (Pad 1) (padRight Max (txt "Search: " <+> hLimit 30 (vLimit 1 $ E.renderEditor (txt . T.unlines) True (st ^. #searchTerm))))
         previewNote = padBottom Max $ padAll 1 $ padRight Max $ txt $ fromMaybe "" $ do

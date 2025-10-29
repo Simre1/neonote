@@ -33,7 +33,9 @@ displayNotesInTerminal attributes orderedNoteInfos = do
     attributeToCell noteInfo AttributeCreated = formatDate $ noteInfo ^. #created
     attributeToCell noteInfo AttributeModified = formatDate $ noteInfo ^. #modified
     attributeToCell noteInfo AttributeExtension = noteInfo ^. #extension
-    attributeToCell noteInfo AttributeTags = concatTags $ noteInfo ^. #tags
+    attributeToCell noteInfo AttributeTags =
+      let tagString = concatFields $ noteInfo ^. #fields
+       in if tagString == "" then "-" else tagString
     makeTitle AttributeId = "id"
     makeTitle AttributeCreated = "created"
     makeTitle AttributeModified = "modified"

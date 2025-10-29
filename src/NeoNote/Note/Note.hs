@@ -2,7 +2,7 @@ module NeoNote.Note.Note where
 
 import Data.Coerce (coerce)
 import Data.List (intersperse, sortBy)
-import Data.Set qualified as S
+import Data.Map qualified as M
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
@@ -21,15 +21,20 @@ noteIdFromText text = NoteId <$> parseId text
 data DateLiteral
   = DateLiteralCreated
   | DateLiteralModified
-  | DateLiteral IncompleteTime
+  | DateLiteralTime IncompleteTime
   deriving (Show, Eq, Ord, Generic)
 
+data Comparison
+  = Equal
+  | Greater
+  | Lesser
+  | GreaterEqual
+  | LessserEqual
+  deriving (Eq, Ord, Show, Generic)
+
 data NoteFilter
-  = HasTag Tag
-  | HasId Id
-  | EqualDate DateLiteral DateLiteral
-  | AfterDate DateLiteral DateLiteral
-  | BeforeDate DateLiteral DateLiteral
+  = HasField FieldName
+  | Check Comparison Literal Literal
   | Not NoteFilter
   | And NoteFilter NoteFilter
   | Together NoteFilter NoteFilter
@@ -38,11 +43,23 @@ data NoteFilter
   | EveryNote
   deriving (Show, Eq, Ord, Generic)
 
-newtype Tag = Tag Text deriving (Generic, Show, Eq, Ord)
+data Literal
+  = FieldLiteral FieldName
+  | DateLiteral DateLiteral
+  | IdLiteral
+  | StringLiteral Text
+  | IntLiteral Int
+  deriving (Eq, Ord, Show, Generic)
+
+data Value = NoValue | StringValue Text | IntValue Int deriving (Eq, Ord, Show)
+
+newtype FieldName = FieldName {text :: Text} deriving (Eq, Ord, Show, Generic)
+
+newtype Fields = Fields {kv :: M.Map FieldName Value} deriving (Eq, Ord, Show, Generic)
 
 data NoteInfo = NoteInfo
   { id :: NoteId,
-    tags :: S.Set Tag,
+    fields :: Fields,
     extension :: Text,
     created :: Time,
     modified :: Time
@@ -57,6 +74,8 @@ data Note = Note
 
 newtype NoteContent = NoteContent Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
 
+newtype RawNote = RawNote Text deriving (Generic, Show, Eq, Ord, Semigroup, Monoid)
+
 data NoteAttribute
   = AttributeId
   | AttributeCreated
@@ -65,8 +84,8 @@ data NoteAttribute
   | AttributeTags
   deriving (Show, Eq, Generic, Ord)
 
-hasContent :: NoteContent -> Bool
-hasContent (NoteContent content) =
+hasContent :: RawNote -> Bool
+hasContent (RawNote content) =
   not $
     T.null (T.strip content)
 
@@ -82,17 +101,13 @@ orderNote noteAttribute info1 info2 = case noteAttribute of
   AttributeCreated -> compareField #created
   AttributeModified -> compareField #modified
   AttributeExtension -> compareField #extension
-  AttributeTags -> compareField #tags
+  AttributeTags -> compareField #fields
   where
     compareField :: (Ord a) => Lens' NoteInfo a -> Ordering
     compareField field = compare (info2 ^. field) (info1 ^. field)
 
-concatTags :: S.Set Tag -> Text
-concatTags tags =
-  mconcat $
-    intersperse "," $
-      coerce
-        <$> S.toList tags
+concatFields :: Fields -> Text
+concatFields fields = mconcat $ intersperse "," $ coerce $ M.keys (fields ^. #kv)
 
 data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
 

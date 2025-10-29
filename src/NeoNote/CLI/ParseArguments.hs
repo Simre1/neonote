@@ -7,7 +7,7 @@ import Data.Text (Text, unpack)
 import Data.Version (showVersion)
 import NeoNote.Actions
 import NeoNote.Note.Note
-import NeoNote.Note.Parse (parseNoteFilter)
+import NeoNote.Note.Syntax.NoteFilter (parseNoteFilter)
 import NeoNote.Time
 import Options.Applicative hiding (action)
 import Paths_neonote qualified as P (version)

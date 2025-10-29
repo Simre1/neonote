@@ -2,6 +2,7 @@ module NeoNote.CLI.Editor where
 
 import Control.Exception (catch, finally)
 import Control.Monad (guard, zipWithM_)
+import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (coerce)
 import Data.List.NonEmpty
 import Data.Text (Text, pack, unpack)
@@ -13,17 +14,18 @@ import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Note
+import Optics.Core
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath (joinPath)
 import System.Process.Typed
 import System.Random (randomRIO)
 
-runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty Note -> Eff es (NonEmpty NoteContent)
+runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty (NoteInfo, RawNote) -> Eff es (NonEmpty RawNote)
 runEditor notes = do
   editorCommandTemplate <- getConfiguration #editor
   suffix <- pack . show <$> randomRIO @Int (10000, 99999)
   let fileName noteInfo = suffix <> "-" <> noteFileName noteInfo
-  let files = (\(Note noteInfo noteContent) -> (fileName noteInfo, noteContent)) <$> notes
+  let files = first fileName <$> notes
   withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommandTemplate files) $ \e -> do
     unlift $ throwError $ EditingCrashed e
 
@@ -33,7 +35,7 @@ buildEditorCommand editorCommandTemplate notePath =
     then T.replace "%" notePath editorCommandTemplate
     else editorCommandTemplate <> " " <> notePath
 
-runEditorTemporaryFile :: Text -> NonEmpty (Text, NoteContent) -> IO (NonEmpty NoteContent)
+runEditorTemporaryFile :: Text -> NonEmpty (Text, RawNote) -> IO (NonEmpty RawNote)
 runEditorTemporaryFile editorCommandTemplate files = do
   withTemporaryFiles (fst <$> files) $ \filePaths -> do
     zipWithM_ (\filePath oldNoteContent -> T.writeFile filePath $ coerce oldNoteContent) (toList filePaths) (snd <$> toList files)
@@ -41,7 +43,7 @@ runEditorTemporaryFile editorCommandTemplate files = do
     exitCode <- runProcess cmd
     guard $ exitCode == ExitSuccess
     newNoteContents <- traverse T.readFile filePaths
-    pure $ NoteContent <$> newNoteContents
+    pure $ RawNote <$> newNoteContents
 
 withTemporaryFiles :: NonEmpty Text -> (NonEmpty FilePath -> IO a) -> IO a
 withTemporaryFiles filenames handle = do

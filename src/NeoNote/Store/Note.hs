@@ -2,6 +2,8 @@ module NeoNote.Store.Note where
 
 import Control.Monad
 import Data.List (sortBy)
+import Data.Map qualified as M
+import Data.Set qualified as S
 import Data.Text
 import Effectful
 import Effectful.Dispatch.Dynamic (LocalEnv, interpret, localSeqUnlift)
@@ -10,7 +12,7 @@ import NeoNote.Configuration
 import NeoNote.Data.Id
 import NeoNote.Log
 import NeoNote.Note.Note
-import NeoNote.Note.Parse (extractTags)
+import NeoNote.Note.Syntax.RawNote (parseRawNote)
 import NeoNote.Store.Database
 import NeoNote.Time
 import Optics.Core
@@ -18,11 +20,11 @@ import Optics.Core
 data NoteStore :: Effect where
   NoteExists :: NoteId -> NoteStore m Bool
   FindNotes :: NoteFilter -> NoteStore m [NoteId]
-  WriteNote :: NoteInfo -> NoteContent -> NoteStore m ()
+  WriteNote :: NoteInfo -> RawNote -> NoteStore m ()
   ReadNote :: NoteId -> NoteStore m Note
   DeleteNote :: NoteId -> NoteStore m ()
   ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
-  CreateNote :: (NoteInfo -> m NoteContent) -> NoteStore m ()
+  CreateNote :: (NoteInfo -> m RawNote) -> NoteStore m ()
   BulkCreateNotes :: [(Text, NoteContent)] -> NoteStore m ()
 
 makeEffect ''NoteStore
@@ -31,7 +33,7 @@ runNoteStore :: (Database :> es, GetTime :> es, GetConfiguration :> es, MakeId :
 runNoteStore = interpret $ \env -> \case
   NoteExists noteId -> runNoteExists noteId
   FindNotes noteFilter -> runFindNotes noteFilter
-  WriteNote noteInfo noteContent -> runWriteNote noteInfo noteContent
+  WriteNote noteInfo rawNote -> runWriteNote noteInfo rawNote
   ReadNote noteId -> runReadNote noteId
   DeleteNote noteId -> runDeleteNote noteId
   ReadNoteInfo noteId -> runGetNoteInfo noteId
@@ -47,25 +49,31 @@ runFindNotes noteFilter = do
   noteInfos <- traverse dbReadNoteInfo noteIds
   pure $ sortBy (orderNote AttributeModified) noteInfos ^. mapping #id
 
-runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => NoteInfo -> NoteContent -> Eff es ()
+runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => NoteInfo -> RawNote -> Eff es ()
 runWriteNote noteInfo noteContent = do
-  if hasContent noteContent
-    then do
-      oldNote <- dbReadNote (noteInfo ^. #id)
-      if oldNote ^. #content /= noteContent
-        then do
-          runWriteNoteNoLogging noteInfo noteContent
-          logMessage NoteEdited
-        else logMessage NoteUnchanged
-    else logMessage NoteEmpty
+  runWriteNoteNoLogging noteInfo noteContent
+  logMessage NoteEdited
+  pure ()
 
-runWriteNoteNoLogging :: (GetTime :> es, Database :> es) => NoteInfo -> NoteContent -> Eff es ()
-runWriteNoteNoLogging noteInfo noteContent = do
-  let tags = extractTags noteContent
+-- if hasContent noteContent
+--   then do
+--     oldNote <- dbReadNote (noteInfo ^. #id)
+--     if oldNote ^. #content /= noteContent
+--       then do
+--         runWriteNoteNoLogging noteInfo noteContent
+--         logMessage NoteEdited
+--       else logMessage NoteUnchanged
+--   else
+-- TODO: Delete already existing notes
+-- logMessage NoteEmpty
+
+runWriteNoteNoLogging :: (GetTime :> es, Database :> es) => NoteInfo -> RawNote -> Eff es ()
+runWriteNoteNoLogging noteInfo rawNote = do
+  let (fields, noteContent) = parseRawNote rawNote
   currentTime <- getCurrentTime
   let updatedNoteInfo =
         noteInfo
-          { tags = tags,
+          { tags = S.fromList $ fmap Tag $ M.keys fields,
             modified = currentTime
           }
   dbWriteNote (Note updatedNoteInfo noteContent)
@@ -80,7 +88,7 @@ runDeleteNote noteId = do
 runGetNoteInfo :: (Database :> es) => NoteId -> Eff es NoteInfo
 runGetNoteInfo = dbReadNoteInfo
 
-runCreateNote :: (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs NoteContent) -> Eff es ()
+runCreateNote :: (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs RawNote) -> Eff es ()
 runCreateNote env getNoteContent = do
   noteInfo <- makeNewNoteInfo
   noteContent <- localSeqUnlift env $ \unlift -> unlift $ getNoteContent noteInfo
@@ -96,7 +104,7 @@ runBulkCreateNotes noteData = do
   currentTime <- getCurrentTime
   notes <- forM noteData $ \(extension, noteContent) -> do
     noteId <- makeNoteId
-    let tags = extractTags noteContent
+    let tags = undefined
         noteInfo =
           NoteInfo
             { id = noteId,

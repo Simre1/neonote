@@ -36,7 +36,7 @@ import Optics.Core ((^.))
 
 data CLI :: Effect where
   GetActionFromArguments :: CLI m Action
-  Editor :: NonEmpty Note -> CLI m (NonEmpty NoteContent)
+  Editor :: NonEmpty (NoteInfo, RawNote) -> CLI m (NonEmpty RawNote)
   Pick :: Text -> PickerCallbacks m -> CLI m ()
   Prompt :: Prompt a -> CLI m a
   DisplayNotes :: [NoteAttribute] -> Ordered NoteInfo -> CLI m ()

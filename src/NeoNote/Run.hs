@@ -19,7 +19,8 @@ import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Highlight (Highlight, runHighlightWithCache)
 import NeoNote.Note.Note
-import NeoNote.Note.Parse (parseNoteFilter)
+import NeoNote.Note.Syntax.NoteFilter
+import NeoNote.Note.Syntax.RawNote
 import NeoNote.Store.Database (Database, runDatabase)
 import NeoNote.Store.Note
 import NeoNote.Time
@@ -64,12 +65,11 @@ handleAction action = case action of
 runCreateNoteAction :: (CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 runCreateNoteAction initialText skipEditor = do
   createNote $ \noteInfo -> do
-    let initialNoteContent = NoteContent initialText
-    (noteContent :| _) <-
-      if skipEditor
-        then pure $ pure initialNoteContent
-        else editor $ pure $ Note noteInfo initialNoteContent
-    pure noteContent
+    if skipEditor
+      then pure (RawNote initialText)
+      else do
+        (rawNote :| _) <- editor $ pure $ (noteInfo, RawNote initialText)
+        pure $ rawNote
 
 runEditNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Text -> Eff es ()
 runEditNoteAction amount searchTerm = do
@@ -80,7 +80,8 @@ runEditNoteAction amount searchTerm = do
     (a : as) -> do
       let noteIds = a :| as
       notes <- traverse readNote noteIds
-      newNoteContents <- editor notes
+
+      newNoteContents <- editor ((\n -> (n ^. #info, noteToRaw n)) <$> notes)
 
       forM_ (NE.zip (notes ^. mapping #info) newNoteContents) $ uncurry writeNote
 
@@ -92,7 +93,7 @@ runPickNoteAction initialSearchTerm = do
       { handlePickedAction = \case
           (PickedEdit noteInfo) -> do
             note <- readNote (noteInfo ^. #id)
-            (newNoteContent :| _) <- editor $ pure note
+            (newNoteContent :| _) <- editor $ pure (note ^. #info, noteToRaw note)
             writeNote noteInfo newNoteContent
             pure False
           (PickedDelete noteInfo) -> do

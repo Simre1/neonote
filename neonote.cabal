@@ -55,7 +55,9 @@ library
         NeoNote.Run
         NeoNote.Note.Highlight
         NeoNote.Note.Note
-        NeoNote.Note.Parse
+        NeoNote.Note.Syntax.Common
+        NeoNote.Note.Syntax.NoteFilter
+        NeoNote.Note.Syntax.RawNote
         NeoNote.Data.Id
         NeoNote.Store.Database
         NeoNote.Store.Database.Error
