@@ -161,7 +161,7 @@ runListNotesAction search noteAttributes showAmount orderBy = do
 runAddNotesAction :: (IOE :> es, NoteStore :> es) => [FilePath] -> Eff es ()
 runAddNotesAction paths = do
   noteData <- forM paths $ \filePath -> do
-    let extension = pack $ takeExtension filePath
+    let extension = pack $ drop 1 $ takeExtension filePath
     rawContent <- liftIO $ T.readFile filePath
     pure (extension, RawNote rawContent)
   bulkCreateNotes noteData
