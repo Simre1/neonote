@@ -1,7 +1,5 @@
 module NeoNote.Run where
 
-import Control.Concurrent (myThreadId)
-import Control.Exception
 import Control.Monad (forM, forM_, when)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List.NonEmpty (NonEmpty (..))
@@ -13,7 +11,6 @@ import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Actions qualified as Action
 import NeoNote.CLI
-import NeoNote.CLI.Editor (ShouldLog (..))
 import NeoNote.CLI.Prompt
 import NeoNote.Cache
 import NeoNote.Configuration
@@ -64,17 +61,19 @@ handleAction action = case action of
   Action.AddNotes paths -> runAddNotesAction paths
   Action.ExportNotes path searchText -> runExportNotesAction path searchText
 
-runCreateNoteAction :: (CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
-runCreateNoteAction initialText skipEditor = do
+runCreateNoteAction :: (IOE :> es, CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
+runCreateNoteAction initialText1 skipEditor = do
   createNote $ \noteInfo kont -> do
+    initialText2 <- getStandardInput
+    let initialText = initialText1 <> initialText2
     if skipEditor
-      then kont DoLog (RawNote initialText)
+      then kont EditorClosed (RawNote initialText)
       else editor (pure $ EditHandle {identifier = noteInfo, edit = kont, oldContent = RawNote initialText})
 
 runEditNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Text -> Eff es ()
 runEditNoteAction amount searchTerm = do
   noteFilter <- makeNoteFilter searchTerm
-  selectedNotes <- take amount <$> findNotes noteFilter
+  selectedNotes <- findNotes noteFilter (Selection {amount, order = Descending AttributeModified})
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     (a : as) -> do
@@ -86,8 +85,8 @@ runEditNoteAction amount searchTerm = do
           { identifier = note ^. #info,
             oldContent = noteToRaw note,
             edit = \case
-              DoLog -> writeNote note
-              DontLog -> skipLogging . writeNote note
+              EditorClosed -> writeNote note
+              EditorOpen -> skipLogging . writeNote note
           }
 
 runPickNoteAction :: (IOE :> es, CLI :> es, NoteStore :> es, GetTime :> es, Log :> es) => Text -> Eff es ()
@@ -104,8 +103,8 @@ runPickNoteAction initialSearchTerm = do
                   { identifier = note ^. #info,
                     oldContent = noteToRaw note,
                     edit = \case
-                      DoLog -> writeNote note
-                      DontLog -> skipLogging . writeNote note
+                      EditorClosed -> writeNote note
+                      EditorOpen -> skipLogging . writeNote note
                   }
             pure False
           (PickedDelete noteInfo) -> do
@@ -123,7 +122,7 @@ runPickNoteAction initialSearchTerm = do
           time <- getCurrentTime
           case parseNoteFilter time searchTerm of
             Right newNoteFilter -> do
-              noteIds <- findNotes newNoteFilter
+              noteIds <- findNotes newNoteFilter (Selection {amount = 10, order = Descending AttributeModified})
               noteInfos <- traverse readNoteInfo noteIds
               liftIO $ writeIORef selectedNotesRef noteInfos
             Left _ -> pure ()
@@ -134,7 +133,7 @@ runPickNoteAction initialSearchTerm = do
 runDeleteNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Text -> Eff es ()
 runDeleteNoteAction amount searchTerm = do
   noteFilter <- makeNoteFilter searchTerm
-  selectedNotes <- take amount <$> findNotes noteFilter
+  selectedNotes <- findNotes noteFilter (Selection {amount, order = Descending AttributeModified})
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     noteIds -> do
@@ -150,7 +149,7 @@ runDeleteNoteAction amount searchTerm = do
 runViewNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Bool -> Bool -> Text -> Eff es ()
 runViewNoteAction amount plain frontmatter searchTerm = do
   noteFilter <- makeNoteFilter searchTerm
-  selectedNotes <- take amount <$> findNotes noteFilter
+  selectedNotes <- take amount <$> findNotes noteFilter Selection {amount, order = Descending AttributeModified}
   case selectedNotes of
     [] -> logMessage NoMatchingNote
     noteIds -> do
@@ -159,16 +158,15 @@ runViewNoteAction amount plain frontmatter searchTerm = do
         displayNote plain frontmatter note
 
 runListNotesAction :: (NoteStore :> es, CLI :> es, Error NeoNoteError :> es, GetTime :> es) => Text -> [NoteAttribute] -> Int -> OrderBy NoteAttribute -> Eff es ()
-runListNotesAction search noteAttributes showAmount orderBy = do
+runListNotesAction search noteAttributes amount order = do
   let noteAttributes' =
         if null noteAttributes
           then [AttributeId]
           else noteAttributes
   noteFilter <- makeNoteFilter search
-  noteIds <- findNotes noteFilter
+  noteIds <- findNotes noteFilter Selection {amount, order}
   noteInfos <- traverse readNoteInfo noteIds
-  let orderedNoteInfos = orderNotes orderBy showAmount noteInfos
-  displayNotes noteAttributes' orderedNoteInfos
+  displayNotes noteAttributes' noteInfos
 
 runAddNotesAction :: (IOE :> es, NoteStore :> es) => [FilePath] -> Eff es ()
 runAddNotesAction paths = do
@@ -181,7 +179,7 @@ runAddNotesAction paths = do
 runExportNotesAction :: (IOE :> es, MakeId :> es, GetTime :> es, NoteStore :> es, Error NeoNoteError :> es) => Maybe FilePath -> Text -> Eff es ()
 runExportNotesAction maybePath text = do
   noteFilter <- makeNoteFilter text
-  noteIds <- findNotes noteFilter
+  noteIds <- findNotes noteFilter Selection {amount = maxBound, order = Descending AttributeModified}
   notes <- readNotes noteIds
 
   dirPath <- createDir maybePath

@@ -4,14 +4,10 @@ import Control.Applicative (Alternative (..))
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bifunctor (Bifunctor (..))
-import Data.Char (isAlphaNum)
-import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
-import Debug.Trace
 import Effectful (runEff)
-import NeoNote.Data.Id
 import NeoNote.Note.Note
 import NeoNote.Note.Syntax.Common
 import NeoNote.Time

@@ -13,10 +13,10 @@ import NeoNote.Note.Note
 import NeoNote.Time
 import Optics.Core
 
-displayNotesInTerminal :: (IOE :> es) => [NoteAttribute] -> Ordered NoteInfo -> Eff es ()
+displayNotesInTerminal :: (IOE :> es) => [NoteAttribute] -> [NoteInfo] -> Eff es ()
 displayNotesInTerminal attributes orderedNoteInfos = do
   let _header = makeTitle <$> attributes
-      rows = [attributeToCell noteInfo <$> attributes | noteInfo <- orderedNoteInfos ^. #list]
+      rows = [attributeToCell noteInfo <$> attributes | noteInfo <- orderedNoteInfos]
       tableText = renderTable rows
   liftIO $ TL.putStrLn tableText
   where

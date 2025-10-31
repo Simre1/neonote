@@ -8,7 +8,6 @@ import Data.Coerce
 import Data.Either (partitionEithers)
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
-import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
@@ -33,10 +32,10 @@ parseRawNote (RawNote rawText) =
     frontmatter :: Parser ([JunkField], Fields)
     frontmatter = (<|> pure ([], Fields M.empty)) $ P.try $ do
       delimiterLine
-      lines <- P.many $ do
+      fieldLines <- P.many $ do
         line <- Right <$> fieldP <|> Left <$> junkFieldP
         pure line
-      let (junk, fields) = partitionEithers lines
+      let (junk, fields) = partitionEithers fieldLines
       delimiterLine
       pure (junk, Fields $ M.fromList fields)
     delimiterLine :: Parser ()

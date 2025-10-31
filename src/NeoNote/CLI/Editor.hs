@@ -44,12 +44,12 @@ buildEditorCommand editorCommandTemplate notePath =
 
 data EditHandle a m = EditHandle
   { oldContent :: RawNote,
-    edit :: ShouldLog -> RawNote -> m (),
+    edit :: IsEditorOpen -> RawNote -> m (),
     identifier :: a
   }
   deriving (Generic)
 
-data ShouldLog = DoLog | DontLog deriving (Eq, Ord, Show)
+data IsEditorOpen = EditorOpen | EditorClosed deriving (Eq, Ord, Show)
 
 runEditorTemporaryFile :: Text -> NonEmpty (EditHandle Text IO) -> IO ()
 runEditorTemporaryFile editorCommandTemplate files = do
@@ -69,7 +69,7 @@ runEditorTemporaryFile editorCommandTemplate files = do
               case find (\eh -> eh ^. #identifier == T.pack filename) files of
                 Just eh -> do
                   rawNote <- T.readFile (tmpDir </> filename)
-                  (eh ^. #edit) DontLog (RawNote rawNote)
+                  (eh ^. #edit) EditorOpen (RawNote rawNote)
                 Nothing -> pure ()
             _ -> pure ()
 
@@ -81,7 +81,7 @@ runEditorTemporaryFile editorCommandTemplate files = do
           newNoteContents <- traverse T.readFile filePaths
           zipWithM_
             ($)
-            (fmap ($ DoLog) $ toList $ files ^. mapping #edit)
+            (fmap ($ EditorClosed) $ toList $ files ^. mapping #edit)
             (toList $ RawNote <$> newNoteContents)
       stopListening
       guard $ exitCode == ExitSuccess

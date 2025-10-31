@@ -15,6 +15,7 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
+import GHC.Generics (Generic)
 import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Note.Note
@@ -28,9 +29,15 @@ data Database :: Effect where
   DbWriteNotes :: [Note] -> Database m ()
   DbReadNote :: NoteId -> Database m Note
   DbReadNoteInfo :: NoteId -> Database m NoteInfo
-  DbFindNotes :: NoteFilter -> Database m [NoteId]
+  DbFindNotes :: NoteFilter -> Selection -> Database m [NoteId]
   DbNoteExists :: NoteId -> Database m Bool
   DbDeleteNote :: NoteId -> Database m ()
+
+data Selection = Selection
+  { amount :: Int,
+    order :: OrderBy NoteAttribute
+  }
+  deriving (Show, Eq, Ord, Generic)
 
 makeEffect ''Database
 
@@ -53,7 +60,7 @@ runDatabase eff = do
               DbWriteNotes note -> handleWriteNote connection note
               DbReadNote note -> handleReadNote connection note
               DbReadNoteInfo noteId -> handleReadNoteInfo connection noteId
-              DbFindNotes notesFilter -> handleFindNotes connection notesFilter
+              DbFindNotes notesFilter selection -> handleFindNotes connection notesFilter selection
               DbDeleteNote noteId -> handleDBDeleteNote connection noteId
           )
           (inject eff)
@@ -155,7 +162,7 @@ dateLiteralToCondition comp d1 d2 = do
     timeParts = [(#year, "%Y"), (#month, "%m"), (#day, "%d"), (#hour, "%H"), (#minute, "%M"), (#seconds, "%S")]
 
 generateConditionSql :: NoteFilter -> (Text, [DB.NamedParam])
-generateConditionSql filter = runState (noteFilterToCondition filter) []
+generateConditionSql noteFilter = runState (noteFilterToCondition noteFilter) []
 
 handleNoteExists :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> NoteId -> Eff es Bool
 handleNoteExists connection noteId = do
@@ -247,21 +254,34 @@ handleReadNoteInfo connection noteId = do
           }
     _ -> throwError (TooManyResults noteId)
 
-handleFindNotes :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> NoteFilter -> Eff es [NoteId]
-handleFindNotes connection notesFilter = do
+handleFindNotes :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> NoteFilter -> Selection -> Eff es [NoteId]
+handleFindNotes connection notesFilter selection = do
   let (condition, params) = generateConditionSql notesFilter
       conditionSQL =
         if not (T.null condition)
           then "where " <> condition
           else ""
+      sql = [__i| select id from notes #{conditionSQL} order by #{orderToSql (selection ^. #order)}, #{orderToSql (Descending AttributeModified)} limit #{selection ^. #amount} |]
   results <-
     liftIO $
       DB.queryNamed
         connection
-        [__i| select id from notes #{conditionSQL} |]
+        sql
         params
   forM results $ \(DB.Only matchedNoteId) ->
     maybe (throwError $ CorruptedNoteId matchedNoteId) pure $ noteIdFromText matchedNoteId
+  where
+    orderToSql :: OrderBy NoteAttribute -> Text
+    orderToSql order = case order of
+      Ascending attribute -> [__i| #{attributeToColumn attribute} asc|]
+      Descending attribute -> [__i| #{attributeToColumn attribute} desc|]
+    attributeToColumn :: NoteAttribute -> Text
+    attributeToColumn = \case
+      AttributeId -> "id"
+      AttributeCreated -> "created"
+      AttributeModified -> "modified"
+      AttributeExtension -> "extension"
+      AttributeProperties -> [__i| (group_concat(select field from fields where noteId = id order by field))|]
 
 handleWriteNote :: (IOE :> es) => DB.Connection -> [Note] -> Eff es ()
 handleWriteNote connection notes =

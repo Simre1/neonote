@@ -1,14 +1,26 @@
-module NeoNote.Store.Note where
+module NeoNote.Store.Note
+  ( NoteStore,
+    runNoteStore,
+    noteExists,
+    findNotes,
+    writeNote,
+    readNote,
+    readNotes,
+    deleteNote,
+    readNoteInfo,
+    createNote,
+    bulkCreateNotes,
+    Selection (..),
+  )
+where
 
 import Control.Monad
 import Data.List (sortBy)
-import Data.Map qualified as M
-import Data.Set qualified as S
 import Data.Text
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret, localLiftUnlift)
 import Effectful.TH (makeEffect)
-import NeoNote.CLI.Editor (ShouldLog (..))
+import NeoNote.CLI.Editor
 import NeoNote.Configuration
 import NeoNote.Data.Id
 import NeoNote.Log
@@ -20,12 +32,12 @@ import Optics.Core
 
 data NoteStore :: Effect where
   NoteExists :: NoteId -> NoteStore m Bool
-  FindNotes :: NoteFilter -> NoteStore m [NoteId]
+  FindNotes :: NoteFilter -> Selection -> NoteStore m [NoteId]
   WriteNote :: Note -> RawNote -> NoteStore m ()
   ReadNote :: NoteId -> NoteStore m Note
   DeleteNote :: NoteId -> NoteStore m ()
   ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
-  CreateNote :: (NoteInfo -> (ShouldLog -> RawNote -> m ()) -> m ()) -> NoteStore m ()
+  CreateNote :: (NoteInfo -> (IsEditorOpen -> RawNote -> m ()) -> m ()) -> NoteStore m ()
   BulkCreateNotes :: [(Text, RawNote)] -> NoteStore m ()
 
 makeEffect ''NoteStore
@@ -33,7 +45,7 @@ makeEffect ''NoteStore
 runNoteStore :: (Database :> es, GetTime :> es, GetConfiguration :> es, MakeId :> es, Log :> es) => Eff (NoteStore : es) a -> Eff es a
 runNoteStore = interpret $ \env -> \case
   NoteExists noteId -> runNoteExists noteId
-  FindNotes noteFilter -> runFindNotes noteFilter
+  FindNotes noteFilter selection -> runFindNotes noteFilter selection
   WriteNote noteInfo rawNote -> runWriteNote noteInfo rawNote
   ReadNote noteId -> runReadNote noteId
   DeleteNote noteId -> runDeleteNote noteId
@@ -46,11 +58,11 @@ runNoteStore = interpret $ \env -> \case
 runNoteExists :: (Database :> es) => NoteId -> Eff es Bool
 runNoteExists = dbNoteExists
 
-runFindNotes :: (Database :> es) => NoteFilter -> Eff es [NoteId]
-runFindNotes noteFilter = do
-  noteIds <- dbFindNotes noteFilter
+runFindNotes :: (Database :> es) => NoteFilter -> Selection -> Eff es [NoteId]
+runFindNotes noteFilter selection = do
+  noteIds <- dbFindNotes noteFilter selection
   noteInfos <- traverse dbReadNoteInfo noteIds
-  pure $ sortBy (orderNote AttributeModified) noteInfos ^. mapping #id
+  pure $ noteInfos ^. mapping #id
 
 runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => Note -> RawNote -> Eff es ()
 runWriteNote oldNote rawNote = do
@@ -98,16 +110,16 @@ runGetNoteInfo = dbReadNoteInfo
 
 runCreateNote ::
   (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) =>
-  (NoteInfo -> (ShouldLog -> RawNote -> Eff es ()) -> Eff es ()) -> Eff es ()
+  (NoteInfo -> (IsEditorOpen -> RawNote -> Eff es ()) -> Eff es ()) -> Eff es ()
 runCreateNote createRawNote = do
   noteInfo <- makeNewNoteInfo
-  createRawNote noteInfo $ \shouldLog rawNote -> do
+  createRawNote noteInfo $ \isEditorOpen rawNote -> do
     if hasContent rawNote
       then do
         writeRawNote noteInfo rawNote
-        when (shouldLog == DoLog) $ logNoteMessage (noteInfo ^. #id) NoteCreated
+        when (isEditorOpen == EditorClosed) $ logNoteMessage (noteInfo ^. #id) NoteCreated
       else do
-        when (shouldLog == DoLog) $ logNoteMessage (noteInfo ^. #id) NoteEmpty
+        when (isEditorOpen == EditorClosed) $ logNoteMessage (noteInfo ^. #id) NoteEmpty
         dbDeleteNote (noteInfo ^. #id)
 
 runBulkCreateNotes :: (GetTime :> es, Database :> es, MakeId :> es, Log :> es) => [(Text, RawNote)] -> Eff es ()
