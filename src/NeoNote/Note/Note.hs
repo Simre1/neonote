@@ -26,6 +26,7 @@ data DateLiteral
 
 data Comparison
   = Equal
+  | Similar
   | Greater
   | Lesser
   | GreaterEqual

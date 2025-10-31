@@ -2,7 +2,7 @@ module NeoNote.Note.Syntax.Common where
 
 import Control.Applicative (Alternative (..))
 import Control.Monad
-import Data.Char (isAlphaNum)
+import Data.Char (isAlphaNum, isNumber)
 import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -45,7 +45,7 @@ isSafeChar :: Char -> Bool
 isSafeChar c = isAlphaNum c || S.member c specialCharacters
 
 specialCharacters :: S.Set Char
-specialCharacters = S.fromList $ "-+_?."
+specialCharacters = S.fromList $ "-+_."
 
 quotedStringP :: Parser Text
 quotedStringP = do
@@ -65,11 +65,15 @@ timeP _ = dayP <|> timeOfDayP
   where
     dayP :: Parser IncompleteTime
     dayP = P.try $ do
+      -- Lookahead to prevent megaparsec from treating junk like "~&a"
+      -- as an incomplete day string and producing bad error messages
+      _ <- P.lookAhead $ P.satisfy $ isNumber
       dayString <- P.takeP (Just "Day") 10
       maybe (fail "Day could not be parsed") pure (dayFromString dayString)
 
     timeOfDayP :: Parser IncompleteTime
     timeOfDayP = P.try $ do
+      _ <- P.lookAhead $ P.satisfy $ isNumber
       timeOfDayString <- P.takeP (Just "Day") 8
       maybe (fail "Time of day could not be parsed") pure (timeOfDayFromString timeOfDayString)
 

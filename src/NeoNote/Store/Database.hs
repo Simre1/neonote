@@ -115,7 +115,7 @@ nonDateLiteralToCondition :: Comparison -> Literal -> Literal -> State [DB.Named
 nonDateLiteralToCondition comp l1 l2 = do
   v1 <- getNonDateLiteral l1
   v2 <- getNonDateLiteral l2
-  pure [__i| (#{v1} #{comparisonToSql comp} #{v2}) |]
+  pure [__i| (#{comparisonToSql comp v1 v2}) |]
 
 getNonDateLiteral :: Literal -> State [DB.NamedParam] Text
 getNonDateLiteral (FieldLiteral fieldName) = do
@@ -140,7 +140,7 @@ dateLiteralToCondition comp d1 d2 = do
   let (c1, c2) = bimap sqlConcat sqlConcat $ unzip $ catMaybes timePartConditions
   pure $
     if not (T.null c1)
-      then c1 <> comparisonToSql comp <> c2
+      then comparisonToSql comp c1 c2
       else "1=1"
   where
     makeTimePartCondition :: (Lens' IncompleteTime (Maybe Int), Text) -> Either DateLiteral FieldName -> State [DB.NamedParam] (Maybe Text)
@@ -390,12 +390,13 @@ readFields connection noteId = liftIO $ do
 --           pure $ Fields $ M.fromList $ fmap (first FieldName . second sqlToValue) fields
 --         [] -> error "readFields failed, not enough results"
 
-comparisonToSql :: Comparison -> Text
-comparisonToSql Equal = "="
-comparisonToSql Greater = ">"
-comparisonToSql Lesser = "<"
-comparisonToSql GreaterEqual = ">="
-comparisonToSql LesserEqual = "<="
+comparisonToSql :: Comparison -> Text -> Text -> Text
+comparisonToSql Equal v1 v2 = v1 <> " = " <> v2
+comparisonToSql Greater v1 v2 = v1 <> " > " <> v2
+comparisonToSql Lesser v1 v2 = v1 <> " < " <> v2
+comparisonToSql GreaterEqual v1 v2 = v1 <> " >= " <> v2
+comparisonToSql LesserEqual v1 v2 = v1 <> " <= " <> v2
+comparisonToSql Similar v1 v2 = v1 <> " LIKE '%' || " <> v2 <> " || '%'"
 
 valueToSql :: Value -> DB.SQLData
 valueToSql NoValue = DB.SQLNull

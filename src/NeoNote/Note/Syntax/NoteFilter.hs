@@ -53,6 +53,7 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
               P.choice
                 [ Equal <$ P.string "=",
                   Equal <$ P.string "==",
+                  Similar <$ P.string "~",
                   Greater <$ P.string ">",
                   Lesser <$ P.string "<",
                   GreaterEqual <$ P.string ">=",
@@ -72,7 +73,7 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
                   $ lexeme
                   $ wordP
               ]
-          notP = lexeme (P.char '~') >> Not <$> nonLeftRecursiveP
+          notP = lexeme (P.char '!') >> Not <$> nonLeftRecursiveP
           everynoteP = lexeme $ EveryNote <$ P.string "*"
           bracketsP = do
             _ <- lexeme $ P.char '('

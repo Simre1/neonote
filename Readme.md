@@ -64,7 +64,7 @@ here is the content of the note
 The frontmatter is surrounded by `---` delimiters. In the frontmatter, each line stores a simple key value property.
 The field `answer` has value `42`, `foo` has value `bar` and `my-tag` has no value. Although `my-tag` has no value, it is still present and essentially serves as a tag.
 
-Field names and values may contain alphanumerical characters and the special characters "-+_?.". For field names, special characters may not be at the start or at the end. Also, "created", "c", "modified" and "m" are reserved keywords any may not be used for field names.
+Field names and values may contain alphanumerical characters and the special characters "._-+". For field names, special characters may not be at the start or at the end. Also, "created", "c", "modified" and "m" are reserved keywords any may not be used for field names.
 
 Field values may only contain simple data: a single number, a single word or a string enclosed by `"`. In the future, I might add more complex types (e.g. dates or lists).
 
@@ -148,13 +148,14 @@ This can also be used with `delete`, `edit`, `list` and `pick`.
 ### Boolean logic for filtering
 
 - `*` matches every note
-- `~ a` matches if `a` does not match
+- `! a` matches if `a` does not match
 - `a | b` matches if either `a` or `b` matches
 - `a & b` matches if both `a` and `b` match
 - `a b` matches if both `a` and `b` match. Currently, `a b` is the same as `a & b`.
 - `#foo` matches if note contains the property `foo`, no matter its value
 - `#foo=bar` matches if note contains the property `foo` with value `bar`
 - `#foo>4` matches if note contains the property `foo` with a value greater than `4`. Supported comparison operators are `=`, `>`, `<`, `>=`, and `<=`.
+- `#foo~ba` matches if note contains the property `foo` with a value like `ba`.
 - `foo` matches if note contains the string foo
 - Use brackets (`(a)`) to group expressions
 - Use quotes (`"%many +words$"`) to escape search strings and search for special characters

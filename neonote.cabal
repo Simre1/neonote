@@ -46,7 +46,8 @@ common common
         effectful,
         effectful-th,
         transformers,
-        random
+        random,
+        fsnotify
 library
     import:           common
     exposed-modules:  

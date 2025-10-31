@@ -6,8 +6,9 @@ import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text
 import Effectful
-import Effectful.Dispatch.Dynamic (LocalEnv, interpret, localSeqUnlift)
+import Effectful.Dispatch.Dynamic (interpret, localLiftUnlift)
 import Effectful.TH (makeEffect)
+import NeoNote.CLI.Editor (ShouldLog (..))
 import NeoNote.Configuration
 import NeoNote.Data.Id
 import NeoNote.Log
@@ -20,11 +21,11 @@ import Optics.Core
 data NoteStore :: Effect where
   NoteExists :: NoteId -> NoteStore m Bool
   FindNotes :: NoteFilter -> NoteStore m [NoteId]
-  WriteNote :: NoteInfo -> RawNote -> NoteStore m ()
+  WriteNote :: Note -> RawNote -> NoteStore m ()
   ReadNote :: NoteId -> NoteStore m Note
   DeleteNote :: NoteId -> NoteStore m ()
   ReadNoteInfo :: NoteId -> NoteStore m NoteInfo
-  CreateNote :: (NoteInfo -> m RawNote) -> NoteStore m ()
+  CreateNote :: (NoteInfo -> (ShouldLog -> RawNote -> m ()) -> m ()) -> NoteStore m ()
   BulkCreateNotes :: [(Text, RawNote)] -> NoteStore m ()
 
 makeEffect ''NoteStore
@@ -37,7 +38,9 @@ runNoteStore = interpret $ \env -> \case
   ReadNote noteId -> runReadNote noteId
   DeleteNote noteId -> runDeleteNote noteId
   ReadNoteInfo noteId -> runGetNoteInfo noteId
-  CreateNote f -> runCreateNote env f
+  CreateNote kont -> do
+    localLiftUnlift env (ConcUnlift Persistent Unlimited) $ \lift unlift ->
+      runCreateNote (\noteInfo handleRawNote -> unlift $ kont noteInfo (fmap lift . handleRawNote))
   BulkCreateNotes noteData -> runBulkCreateNotes noteData
 
 runNoteExists :: (Database :> es) => NoteId -> Eff es Bool
@@ -49,26 +52,30 @@ runFindNotes noteFilter = do
   noteInfos <- traverse dbReadNoteInfo noteIds
   pure $ sortBy (orderNote AttributeModified) noteInfos ^. mapping #id
 
-runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => NoteInfo -> RawNote -> Eff es ()
-runWriteNote noteInfo noteContent = do
-  runWriteNoteNoLogging noteInfo noteContent
-  logMessage NoteEdited
-  pure ()
+runWriteNote :: (Log :> es, Database :> es, GetTime :> es) => Note -> RawNote -> Eff es ()
+runWriteNote oldNote rawNote = do
+  let oldNoteInfo = oldNote ^. #info
+      noteId = (oldNoteInfo ^. #id)
+  if hasContent rawNote
+    then do
+      let (_, fields, noteContent) = parseRawNote rawNote
+      if oldNote ^. #content == noteContent && fields == oldNote ^. #info % #fields
+        then logNoteMessage noteId NoteUnchanged
+        else do
+          logNoteMessage noteId NoteEdited
+          writeRawNote oldNoteInfo rawNote
+    else do
+      logNoteMessage noteId NoteDeleted
+      dbDeleteNote noteId
 
--- if hasContent noteContent
---   then do
---     oldNote <- dbReadNote (noteInfo ^. #id)
---     if oldNote ^. #content /= noteContent
---       then do
---         runWriteNoteNoLogging noteInfo noteContent
---         logMessage NoteEdited
---       else logMessage NoteUnchanged
---   else
--- TODO: Delete already existing notes
 -- logMessage NoteEmpty
 
-runWriteNoteNoLogging :: (GetTime :> es, Database :> es, Log :> es) => NoteInfo -> RawNote -> Eff es ()
-runWriteNoteNoLogging noteInfo rawNote = do
+-- writeRawNote noteInfo noteContent
+-- logMessage NoteEdited
+-- pure ()
+
+writeRawNote :: (GetTime :> es, Database :> es, Log :> es) => NoteInfo -> RawNote -> Eff es ()
+writeRawNote noteInfo rawNote = do
   let (junk, fields, noteContent) = parseRawNote rawNote
   currentTime <- getCurrentTime
   let updatedNoteInfo =
@@ -76,7 +83,7 @@ runWriteNoteNoLogging noteInfo rawNote = do
           { fields,
             modified = currentTime
           }
-  when (not (Prelude.null junk)) $ logMessage (FrontmatterJunk junk)
+  when (not (Prelude.null junk)) $ logNoteMessage (noteInfo ^. #id) (FrontmatterJunk junk)
   dbWriteNote (Note updatedNoteInfo noteContent)
 
 runReadNote :: (Database :> es) => NoteId -> Eff es Note
@@ -89,16 +96,19 @@ runDeleteNote noteId = do
 runGetNoteInfo :: (Database :> es) => NoteId -> Eff es NoteInfo
 runGetNoteInfo = dbReadNoteInfo
 
-runCreateNote :: (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) => LocalEnv localEs es -> (NoteInfo -> Eff localEs RawNote) -> Eff es ()
-runCreateNote env getNoteContent = do
+runCreateNote ::
+  (Database :> es, GetConfiguration :> es, MakeId :> es, GetTime :> es, Log :> es) =>
+  (NoteInfo -> (ShouldLog -> RawNote -> Eff es ()) -> Eff es ()) -> Eff es ()
+runCreateNote createRawNote = do
   noteInfo <- makeNewNoteInfo
-  noteContent <- localSeqUnlift env $ \unlift -> unlift $ getNoteContent noteInfo
-  if hasContent noteContent
-    then do
-      runWriteNoteNoLogging noteInfo noteContent
-      logMessage NoteCreated
-    else do
-      logMessage NoteEmpty
+  createRawNote noteInfo $ \shouldLog rawNote -> do
+    if hasContent rawNote
+      then do
+        writeRawNote noteInfo rawNote
+        when (shouldLog == DoLog) $ logNoteMessage (noteInfo ^. #id) NoteCreated
+      else do
+        when (shouldLog == DoLog) $ logNoteMessage (noteInfo ^. #id) NoteEmpty
+        dbDeleteNote (noteInfo ^. #id)
 
 runBulkCreateNotes :: (GetTime :> es, Database :> es, MakeId :> es, Log :> es) => [(Text, RawNote)] -> Eff es ()
 runBulkCreateNotes noteData = do
@@ -114,7 +124,7 @@ runBulkCreateNotes noteData = do
               created = currentTime,
               modified = currentTime
             }
-    when (not (Prelude.null junk)) $ logMessage (FrontmatterJunk junk)
+    when (not (Prelude.null junk)) $ logNoteMessage noteId (FrontmatterJunk junk)
     pure $ Note noteInfo noteContent
   dbWriteNotes notes
   logMessage NotesAdded

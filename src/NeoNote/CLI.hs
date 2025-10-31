@@ -9,9 +9,11 @@ module NeoNote.CLI
     runCLI,
     PickerCallbacks (..),
     PickedAction (..),
+    EditHandle (..),
   )
 where
 
+import Data.Functor ((<&>))
 import Data.List.NonEmpty
 import Data.Text
 import Effectful
@@ -21,7 +23,7 @@ import Effectful.TH (makeEffect)
 import NeoNote.Actions (Action)
 import NeoNote.CLI.DisplayNote (displayNoteInTerminal)
 import NeoNote.CLI.DisplayNotes
-import NeoNote.CLI.Editor (runEditor)
+import NeoNote.CLI.Editor (EditHandle (..), runEditor)
 import NeoNote.CLI.ParseArguments (parseActionFromArguments)
 import NeoNote.CLI.Picker (PickedAction (..), PickerCallbacks (..), picker)
 import NeoNote.CLI.Prompt
@@ -32,11 +34,11 @@ import NeoNote.Note.Highlight (Highlight)
 import NeoNote.Note.Note
 import NeoNote.Store.Note (NoteStore)
 import NeoNote.Time
-import Optics.Core ((^.))
+import Optics.Core ((%~), (^.))
 
 data CLI :: Effect where
   GetActionFromArguments :: CLI m Action
-  Editor :: NonEmpty (NoteInfo, RawNote) -> CLI m (NonEmpty RawNote)
+  Editor :: NonEmpty (EditHandle NoteInfo m) -> CLI m ()
   Pick :: Text -> PickerCallbacks m -> CLI m ()
   Prompt :: Prompt a -> CLI m a
   DisplayNotes :: [NoteAttribute] -> Ordered NoteInfo -> CLI m ()
@@ -47,9 +49,9 @@ makeEffect ''CLI
 runCLI :: (IOE :> es, Highlight :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es) => Eff (CLI : es) a -> Eff es a
 runCLI = interpret $ \env uiEffect -> do
   case uiEffect of
-    Editor notes -> runEditor notes
+    Editor notes -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift -> runEditor (notes <&> (#edit %~ (fmap unlift .)))
     GetActionFromArguments -> liftIO parseActionFromArguments
-    Pick searchTerm callbacks -> localSeqUnlift env $ \unlift ->
+    Pick searchTerm callbacks -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift ->
       picker searchTerm $
         PickerCallbacks
           { findNotes = unlift . (callbacks ^. #findNotes),

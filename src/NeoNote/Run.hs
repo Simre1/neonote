@@ -1,5 +1,7 @@
 module NeoNote.Run where
 
+import Control.Concurrent (myThreadId)
+import Control.Exception
 import Control.Monad (forM, forM_, when)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List.NonEmpty (NonEmpty (..))
@@ -11,6 +13,7 @@ import Effectful
 import Effectful.Error.Dynamic
 import NeoNote.Actions qualified as Action
 import NeoNote.CLI
+import NeoNote.CLI.Editor (ShouldLog (..))
 import NeoNote.CLI.Prompt
 import NeoNote.Cache
 import NeoNote.Configuration
@@ -31,10 +34,9 @@ import System.FilePath (takeExtension, (</>))
 type AppEffects = [CLI, Highlight, NoteStore, MakeId, Database, Cache, GetTime, Error NeoNoteError, Log, GetConfiguration, IOE]
 
 runNeoNote :: IO ()
-runNeoNote = do
-  runIO $ do
-    action <- getActionFromArguments
-    handleAction action
+runNeoNote = runIO $ withUnliftStrategy (ConcUnlift Persistent Unlimited) $ do
+  action <- getActionFromArguments
+  handleAction action
 
 runIO :: Eff AppEffects () -> IO ()
 runIO =
@@ -64,12 +66,10 @@ handleAction action = case action of
 
 runCreateNoteAction :: (CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 runCreateNoteAction initialText skipEditor = do
-  createNote $ \noteInfo -> do
+  createNote $ \noteInfo kont -> do
     if skipEditor
-      then pure (RawNote initialText)
-      else do
-        (rawNote :| _) <- editor $ pure $ (noteInfo, RawNote initialText)
-        pure $ rawNote
+      then kont DoLog (RawNote initialText)
+      else editor (pure $ EditHandle {identifier = noteInfo, edit = kont, oldContent = RawNote initialText})
 
 runEditNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Text -> Eff es ()
 runEditNoteAction amount searchTerm = do
@@ -81,11 +81,16 @@ runEditNoteAction amount searchTerm = do
       let noteIds = a :| as
       notes <- traverse readNote noteIds
 
-      newNoteContents <- editor ((\n -> (n ^. #info, noteToRaw n)) <$> notes)
+      editor $ flip fmap notes $ \note ->
+        EditHandle
+          { identifier = note ^. #info,
+            oldContent = noteToRaw note,
+            edit = \case
+              DoLog -> writeNote note
+              DontLog -> skipLogging . writeNote note
+          }
 
-      forM_ (NE.zip (notes ^. mapping #info) newNoteContents) $ uncurry writeNote
-
-runPickNoteAction :: (IOE :> es, CLI :> es, NoteStore :> es, GetTime :> es) => Text -> Eff es ()
+runPickNoteAction :: (IOE :> es, CLI :> es, NoteStore :> es, GetTime :> es, Log :> es) => Text -> Eff es ()
 runPickNoteAction initialSearchTerm = do
   selectedNotesRef <- liftIO $ newIORef []
   pick initialSearchTerm $
@@ -93,8 +98,15 @@ runPickNoteAction initialSearchTerm = do
       { handlePickedAction = \case
           (PickedEdit noteInfo) -> do
             note <- readNote (noteInfo ^. #id)
-            (newNoteContent :| _) <- editor $ pure (note ^. #info, noteToRaw note)
-            writeNote noteInfo newNoteContent
+            editor $
+              pure $
+                EditHandle
+                  { identifier = note ^. #info,
+                    oldContent = noteToRaw note,
+                    edit = \case
+                      DoLog -> writeNote note
+                      DontLog -> skipLogging . writeNote note
+                  }
             pure False
           (PickedDelete noteInfo) -> do
             note <- readNote (noteInfo ^. #id)

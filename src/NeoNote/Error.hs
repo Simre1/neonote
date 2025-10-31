@@ -1,7 +1,9 @@
 module NeoNote.Error where
 
 import Control.Exception (SomeException)
+import Data.String.Interpolate (__i)
 import Data.Text
+import Data.Text.IO qualified as T
 import Effectful
 import Effectful.Error.Dynamic
 import GHC.Generics (Generic)
@@ -30,12 +32,21 @@ runNeoNoteError eff = do
   result <- runError eff
   case result of
     Right _ -> pure ()
-    Left (callstack, err) -> case err of
-      DatabaseError dbError dbCallStack -> printError dbCallStack dbError
-      _ -> printError callstack err
+    Left (callstack, err) -> liftIO $ do
+      let callstack' = case err of
+            DatabaseError _ dbCallstack -> dbCallstack
+            _ -> callstack
+      T.putStrLn $ prettyNeoNoteError err
+      putStrLn $ prettyCallStack callstack'
+      pure ()
   where
-    printError callstack err =
-      liftIO $ do
-        print err
-        putStrLn $ prettyCallStack callstack
-        pure ()
+    -- DatabaseError dbError dbCallStack -> printError dbCallStack (prettyDatabaseError dbError)
+    -- _ -> printError callstack (prettyNeoNoteError err)
+
+    prettyNeoNoteError :: NeoNoteError -> Text
+    prettyNeoNoteError = \case
+      CannotParseFilter searchText parseError -> [__i| Could not parse #{searchText} due to:\n#{parseError} |]
+      EditingCrashed err -> [__i| The editor crashed due to #{err} |]
+      PickerCrashed err -> [__i| The picker crashed due to #{err} |]
+      FileAccessFailed err -> [__i| I could not access the file system due to #{err} |]
+      DatabaseError dbError _ -> prettyDatabaseError dbError

@@ -4,30 +4,37 @@ import Control.Exception (catch, finally)
 import Control.Monad (guard, zipWithM_)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (coerce)
+import Data.Foldable (find)
 import Data.List.NonEmpty
 import Data.Text (Text, pack, unpack)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T (readFile, writeFile)
 import Effectful
 import Effectful.Error.Dynamic
+import GHC.Generics
 import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Note
 import Optics.Core
-import System.Directory (getTemporaryDirectory, removeFile)
-import System.FilePath (joinPath)
+import System.Directory (createDirectoryIfMissing, getTemporaryDirectory, removeFile)
+import System.FSNotify
+import System.FilePath (joinPath, takeBaseName, takeFileName, (</>))
 import System.Process.Typed
 import System.Random (randomRIO)
 
-runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty (NoteInfo, RawNote) -> Eff es (NonEmpty RawNote)
+runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty (EditHandle NoteInfo (Eff es)) -> Eff es ()
 runEditor notes = do
   editorCommandTemplate <- getConfiguration #editor
   suffix <- pack . show <$> randomRIO @Int (10000, 99999)
   let fileName noteInfo = suffix <> "-" <> noteFileName noteInfo
-  let files = first fileName <$> notes
-  withRunInIO $ \unlift -> catch (runEditorTemporaryFile editorCommandTemplate files) $ \e -> do
-    unlift $ throwError $ EditingCrashed e
+  withRunInIO $ \unlift ->
+    let files =
+          notes
+            <&> (#identifier %~ fileName)
+            . (#edit %~ (fmap unlift .))
+     in catch (runEditorTemporaryFile editorCommandTemplate files) $ \e ->
+          unlift $ throwError $ EditingCrashed e
 
 buildEditorCommand :: Text -> Text -> Text
 buildEditorCommand editorCommandTemplate notePath =
@@ -35,19 +42,55 @@ buildEditorCommand editorCommandTemplate notePath =
     then T.replace "%" notePath editorCommandTemplate
     else editorCommandTemplate <> " " <> notePath
 
-runEditorTemporaryFile :: Text -> NonEmpty (Text, RawNote) -> IO (NonEmpty RawNote)
-runEditorTemporaryFile editorCommandTemplate files = do
-  withTemporaryFiles (fst <$> files) $ \filePaths -> do
-    zipWithM_ (\filePath oldNoteContent -> T.writeFile filePath $ coerce oldNoteContent) (toList filePaths) (snd <$> toList files)
-    let cmd = shell $ unpack $ buildEditorCommand editorCommandTemplate (pack $ concat $ intersperse " " filePaths)
-    exitCode <- runProcess cmd
-    guard $ exitCode == ExitSuccess
-    newNoteContents <- traverse T.readFile filePaths
-    pure $ RawNote <$> newNoteContents
+data EditHandle a m = EditHandle
+  { oldContent :: RawNote,
+    edit :: ShouldLog -> RawNote -> m (),
+    identifier :: a
+  }
+  deriving (Generic)
 
-withTemporaryFiles :: NonEmpty Text -> (NonEmpty FilePath -> IO a) -> IO a
+data ShouldLog = DoLog | DontLog deriving (Eq, Ord, Show)
+
+runEditorTemporaryFile :: Text -> NonEmpty (EditHandle Text IO) -> IO ()
+runEditorTemporaryFile editorCommandTemplate files = do
+  withTemporaryFiles (files ^. mapping #identifier) $ \tmpDir filePaths -> do
+    zipWithM_
+      (\filePath oldContent -> T.writeFile filePath $ coerce oldContent)
+      (toList filePaths)
+      (toList $ files ^. mapping #oldContent)
+
+    withManager $ \manager -> do
+      let isNoteEvent = \case
+            Modified {eventPath} -> eventPath `elem` filePaths
+            _ -> False
+          action = \case
+            Modified {eventPath} -> do
+              let filename = takeFileName eventPath
+              case find (\eh -> eh ^. #identifier == T.pack filename) files of
+                Just eh -> do
+                  rawNote <- T.readFile (tmpDir </> filename)
+                  (eh ^. #edit) DontLog (RawNote rawNote)
+                Nothing -> pure ()
+            _ -> pure ()
+
+      stopListening <- watchDir manager tmpDir isNoteEvent action
+
+      let cmd = shell $ unpack $ buildEditorCommand editorCommandTemplate (pack $ concat $ intersperse " " filePaths)
+      exitCode <-
+        runProcess cmd `finally` do
+          newNoteContents <- traverse T.readFile filePaths
+          zipWithM_
+            ($)
+            (fmap ($ DoLog) $ toList $ files ^. mapping #edit)
+            (toList $ RawNote <$> newNoteContents)
+      stopListening
+      guard $ exitCode == ExitSuccess
+
+withTemporaryFiles :: NonEmpty Text -> (FilePath -> NonEmpty FilePath -> IO a) -> IO a
 withTemporaryFiles filenames handle = do
   tmpDirectory <- liftIO getTemporaryDirectory
-  let filePaths = (\filename -> joinPath [tmpDirectory, unpack filename]) <$> filenames
+  let tmpNoteDir = tmpDirectory </> "neonote"
+  liftIO $ createDirectoryIfMissing True tmpNoteDir
+  let filePaths = (\filename -> joinPath [tmpNoteDir, unpack filename]) <$> filenames
   mapM_ (`T.writeFile` "") filePaths
-  finally (handle filePaths) (mapM_ removeFile filePaths)
+  finally (handle tmpNoteDir filePaths) (mapM_ removeFile filePaths)
