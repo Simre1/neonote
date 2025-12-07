@@ -1,6 +1,6 @@
 module NeoNote.Configuration (Configuration (..), injectConfiguration, GetConfiguration (..), getConfiguration) where
 
-import Control.Applicative (empty, (<|>))
+import Control.Applicative (empty, many, (<|>))
 import Data.Either (fromRight)
 import Data.Foldable (toList)
 import Data.Functor.Identity
@@ -66,7 +66,7 @@ getDefaultConfiguration = do
       { notesPath = Identity notesPath,
         editor = Identity editor,
         noteExtension = Identity "md",
-        autoProperties = Identity (AutoProperties M.empty)
+        autoProperties = Identity (AutoProperties [])
       }
 
 getEnvConfiguration :: IO (Configuration Maybe)
@@ -106,12 +106,11 @@ getFileConfiguration = do
                 noteExtension = noteExtension,
                 autoProperties = Nothing
               }
-        autoProperties <- sections "AUTOPROPERTY" $ do
-          propertyName <- fieldOf "name" (maybe (Left "Cannot parse field name") Right . makeFieldName)
-          patternResult <- compilePattern <$> field "pattern" <*> field "replace"
-          pattern <- either (\_ -> empty) pure patternResult
-          pure (M.singleton propertyName pattern)
-        let config2 = mempty {autoProperties = Just $ AutoProperties $ M.unions autoProperties}
+        autoProperties <- section "AUTOPROPERTIES" $ many $ do
+          -- propertyName <- fieldOf "name" (maybe (Left "Cannot parse field name") Right . makeFieldName)
+          patternResult <- compilePattern <$> field "pattern"
+          either (const empty) pure patternResult
+        let config2 = mempty {autoProperties = Just $ AutoProperties $ autoProperties}
 
         pure $ config1 <> config2
   pure $ fromRight mempty parsedConfig

@@ -83,22 +83,7 @@ parseRawNote (RawNote rawText) =
     content = NoteContent <$> P.takeRest
 
 extractAutoProperties :: AutoProperties -> NoteContent -> Properties
-extractAutoProperties (AutoProperties patterns) (NoteContent content) =
-  let props = (\(name, pattern) -> (name, matchPattern pattern content)) <$> M.toList patterns
-      propsMap =
-        foldl'
-          ( \m (propertyName, values) ->
-              M.alter
-                ( \case
-                    Nothing -> Just $ S.fromList values
-                    Just values2 -> Just $ S.fromList values <> values2
-                )
-                propertyName
-                m
-          )
-          M.empty
-          props
-   in Properties propsMap
+extractAutoProperties (AutoProperties patterns) (NoteContent content) = matchPatterns patterns content
 
 makeFrontmatter :: Properties -> B.Builder
 makeFrontmatter (Properties fields) =

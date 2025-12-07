@@ -2,6 +2,7 @@ module NeoNote.Note.Syntax.Common where
 
 import Control.Applicative (Alternative (..))
 import Control.Monad
+import Control.Monad.Trans.State
 import Data.Char (isAlphaNum, isNumber)
 import Data.Set qualified as S
 import Data.Text (Text)
@@ -15,6 +16,8 @@ import Text.Megaparsec.Char qualified as P
 import Text.Megaparsec.Char.Lexer qualified as P
 
 type Parser = P.Parsec Void Text
+
+type ParserS s = P.ParsecT Void Text (State s)
 
 lexeme :: (P.MonadParsec e Text p) => p a -> p a
 lexeme = P.lexeme whitespaceP
@@ -110,6 +113,9 @@ stringLiteralP = do
   txt <- P.takeWhile1P (Just "String literal") (/= '\"')
   _ <- P.char '"'
   pure txt
+
+numberP :: (P.MonadParsec e Text p) => p Int
+numberP = P.signed (pure ()) P.decimal
 
 message :: (P.MonadParsec e Text p) => String -> p ()
 message str = do

@@ -21,7 +21,7 @@ noteIdToText (NoteId uuid) = idToText uuid
 noteIdFromText :: Text -> Maybe NoteId
 noteIdFromText text = NoteId <$> parseId text
 
-newtype AutoProperties = AutoProperties (M.Map PropertyName Pattern)
+newtype AutoProperties = AutoProperties [Pattern]
   deriving (Semigroup, Monoid)
 
 data DateLiteral

@@ -74,7 +74,7 @@ runFakeConfiguration fakeData eff = do
           { notesPath = JustGetField fakeFolderName,
             editor = InsertEditorCmd,
             noteExtension = JustGetField "md",
-            autoProperties = JustGetField $ AutoProperties M.empty
+            autoProperties = JustGetField $ AutoProperties []
           }
   liftIO $ createDirectoryIfMissing True fakeFolderName
   reinterpret

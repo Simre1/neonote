@@ -9,13 +9,15 @@ import Control.Monad.Trans.Writer
 import Data.Bifunctor (Bifunctor (..))
 import Data.List
 import Data.List.NonEmpty qualified as NE
+import Data.Map qualified as M
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set qualified as S
 import Data.Text
 import Data.Text qualified as T
+import Data.Traversable (for)
 import Data.Void (Void)
 import Debug.Trace
-import NeoNote.Note.Note (PropertyName (..), Value)
+import NeoNote.Note.Note (Properties (..), PropertyName (..), Value)
 import NeoNote.Note.Syntax.Common
 import Text.Earley qualified as E
 import Text.Megaparsec (parseMaybe)
@@ -33,7 +35,7 @@ data Pattern
   | RestOfLine
   | And Pattern Pattern
   | Or Pattern Pattern
-  | Capture Pattern (Maybe VarName) [Rule] (Maybe Replace)
+  | Capture Pattern (Maybe VarName) [Rule VarName] (Maybe Replace)
   deriving (Show, Ord, Eq)
 
 type PatternParser a = StateT (S.Set VarName) Parser a
@@ -41,10 +43,10 @@ type PatternParser a = StateT (S.Set VarName) Parser a
 newtype VarName = VarName Text
   deriving (Show, Ord, Eq)
 
-data PatternValue = Var VarName | ConstText Text | ConstInt Int | EmptyValue
+data PatternValue v = Var v | ConstText Text | ConstInt Int | EmptyValue
   deriving (Show, Ord, Eq)
 
-data Rule = Set PropertyName PatternValue
+data Rule v = Set PropertyName (PatternValue v)
   deriving (Show, Ord, Eq)
 
 newtype Replace = Replace [ReplaceAction]
@@ -143,7 +145,7 @@ compilePattern = first (T.pack . P.errorBundlePretty) . P.parse (evalStateT patt
           unpack w <> " is not a captured variable"
       pure $ VarName w
 
-    ruleP :: PatternParser Rule
+    ruleP :: PatternParser (Rule VarName)
     ruleP = lexeme $ do
       fieldName <- lexeme fieldNameP
       value <-
@@ -170,19 +172,61 @@ compilePattern = first (T.pack . P.errorBundlePretty) . P.parse (evalStateT patt
               pure Merge
             ]
 
--- replacePattern :: Pattern -> Text -> Text
--- replacePattern (Pattern regex replace) = Regex.gsub regex replace
+replacePatterns :: [Pattern] -> Properties -> Text -> Text
+replacePatterns patterns deleted content = content
 
-matchPatterns :: [Pattern] -> Text -> [Rule]
-matchPatterns patterns text =
-  let parses = E.allParses (parser patterns) text
-   in []
+matchPatterns :: [Pattern] -> Text -> Properties
+matchPatterns patterns text = Properties M.empty
 
-parser :: [Pattern] -> E.Parser Void Text ([Rule], Replace)
+parser :: [Pattern] -> Parser [Rule ()]
 parser patterns = undefined
   where
-    patternGrammar :: Pattern -> E.Grammar r (E.Prod r Void Text ([Rule], Replace))
-    patternGrammar = undefined
+    patternGrammar :: Pattern -> Parser [Rule ()]
+    patternGrammar p = snd <$> go p
+    go :: Pattern -> Parser (M.Map VarName Text, [Rule ()])
+    go (Exact txt) = mempty <$ P.string txt
+    go (Merge p1 p2) = do
+      (c1, r1) <- go p1
+      (c2, r2) <- go p2
+      pure (c1 <> c2, r1 <> r2)
+    go LineWhitespace = mempty <$ P.takeWhileP (Just "w") (\c -> c == ' ' || c == '\t')
+    go Whitespace = mempty <$ P.takeWhileP (Just "w") (<= ' ')
+    go PropName = mempty <$ fieldNameP
+    go PropValue = mempty <$ valueP
+    go Number = mempty <$ numberP
+    go RestOfLine = mempty <$ P.takeWhileP (Just "w") (\c -> c /= '\n' && c /= '\r')
+    go (And p1 p2) = do
+      ((c1, r1), (c2, r2)) <- both (go p1) (go p2)
+      pure (c1 <> c2, r1 <> r2)
+    go (Or p1 p2) = P.try (go p1) <|> go p2
+    go (Capture p varname rules _replace) = do
+      (t, (c, r)) <- P.match (go p)
+      let c' = case varname of
+            Nothing -> c
+            Just name -> M.insert name t c
+      rules' <- for rules $ \(Set propName value) ->
+        Set propName <$> case value of
+          EmptyValue -> pure EmptyValue
+          ConstInt i -> pure (ConstInt i)
+          (ConstText t) -> pure (ConstText t)
+          (Var varname) -> case M.lookup varname c' of
+            Nothing -> fail "Cannot find variable name"
+            Just v -> case P.parseMaybe @Void (numberP >>= \i -> i <$ P.eof) v of
+              Just i -> pure (ConstInt i)
+              Nothing -> pure (ConstText v)
+      pure (c', r <> rules')
+
+both ::
+  (P.MonadParsec Void Text p) =>
+  p a -> p b -> p (a, b)
+both p1 p2 = do
+  (t1, r1) <- P.lookAhead (P.match p1)
+  (t2, r2) <- P.lookAhead (P.match p2)
+  void $
+    if T.length t1 > T.length t2
+      then P.chunk t1
+      else P.chunk t2
+  pure (r1, r2)
 
 -- mapMaybe (extractValue . NE.tail) $
 --   Regex.captures regex text

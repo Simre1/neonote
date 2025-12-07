@@ -65,9 +65,8 @@ updateNote autoProperties oldNote modificationTime newRawNote =
 -- else Delete
 
 updateContent :: AutoProperties -> Properties -> NoteContent -> NoteContent
-updateContent (AutoProperties autoProperties) deletedProperties (NoteContent noteContent) =
-  let replacePatterns = mapMaybe ((`M.lookup` autoProperties) . fst) (propertyValues deletedProperties)
-   in NoteContent $ foldl' (flip replacePattern) noteContent replacePatterns
+updateContent (AutoProperties patterns) deletedProperties (NoteContent noteContent) =
+  NoteContent $ replacePatterns patterns deletedProperties noteContent
 
 diffProperties :: Properties -> Properties -> Properties
 diffProperties (Properties p1) (Properties p2) =
