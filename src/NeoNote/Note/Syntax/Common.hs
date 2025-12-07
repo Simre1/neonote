@@ -16,30 +16,35 @@ import Text.Megaparsec.Char.Lexer qualified as P
 
 type Parser = P.Parsec Void Text
 
-lexeme :: Parser a -> Parser a
-lexeme = P.lexeme $ whitespaceP
+lexeme :: (P.MonadParsec e Text p) => p a -> p a
+lexeme = P.lexeme whitespaceP
 
-lexemeLine :: Parser a -> Parser a
+lexemeLine :: (P.MonadParsec e Text p) => p a -> p a
 lexemeLine = P.lexeme lineWhitespaceP
 
-lineWhitespaceP :: Parser ()
+lineWhitespaceP :: (P.MonadParsec e Text p) => p ()
 lineWhitespaceP =
   void $
     P.takeWhileP
       (Just "Line whitespace")
       (\c -> c <= ' ' && c /= '\n')
 
-whitespaceP :: Parser ()
+whitespaceP :: (P.MonadParsec e Text p) => p ()
 whitespaceP = void $ P.takeWhileP (Just "Whitespace") (<= ' ')
 
-fieldNameP :: Parser FieldName
+fieldNameP :: (P.MonadParsec e Text p) => p PropertyName
 fieldNameP = P.try $ do
   text <- P.takeWhile1P (Just "Field") isSafeChar
   guard $ S.notMember (T.head text) specialCharacters
   guard $ S.notMember (T.head text) specialCharacters
   guard $ not $ text `S.member` S.fromList ["created", "c", "modified", "c", "id"]
-  pure $ FieldName text
-  where
+  pure $ PropertyName text
+
+valueP :: (P.MonadParsec e Text p) => p Value
+valueP = StringValue <$> wordP <|> IntValue <$> intP
+
+makeFieldName :: Text -> Maybe PropertyName
+makeFieldName = P.parseMaybe @() fieldNameP
 
 isSafeChar :: Char -> Bool
 isSafeChar c = isAlphaNum c || S.member c specialCharacters
@@ -47,23 +52,23 @@ isSafeChar c = isAlphaNum c || S.member c specialCharacters
 specialCharacters :: S.Set Char
 specialCharacters = S.fromList $ "-+_."
 
-quotedStringP :: Parser Text
+quotedStringP :: (P.MonadParsec e Text p) => p Text
 quotedStringP = do
   _ <- P.char '"'
   innerText <- P.takeWhileP (Just "Quoted string") (/= '"')
   _ <- P.char '"'
   pure $ innerText
 
-wordP :: Parser Text
+wordP :: (P.MonadParsec e Text p) => p Text
 wordP = P.takeWhile1P (Just "Single word") isSafeChar
 
-intP :: Parser Int
+intP :: (P.MonadParsec e Text p) => p Int
 intP = P.decimal
 
-timeP :: Time -> Parser IncompleteTime
+timeP :: (MonadFail p, P.MonadParsec e Text p) => Time -> p IncompleteTime
 timeP _ = dayP <|> timeOfDayP
   where
-    dayP :: Parser IncompleteTime
+    dayP :: (MonadFail p, P.MonadParsec e Text p) => p IncompleteTime
     dayP = P.try $ do
       -- Lookahead to prevent megaparsec from treating junk like "~&a"
       -- as an incomplete day string and producing bad error messages
@@ -71,13 +76,13 @@ timeP _ = dayP <|> timeOfDayP
       dayString <- P.takeP (Just "Day") 10
       maybe (fail "Day could not be parsed") pure (dayFromString dayString)
 
-    timeOfDayP :: Parser IncompleteTime
+    timeOfDayP :: (MonadFail p, P.MonadParsec e Text p) => p IncompleteTime
     timeOfDayP = P.try $ do
       _ <- P.lookAhead $ P.satisfy $ isNumber
       timeOfDayString <- P.takeP (Just "Day") 8
       maybe (fail "Time of day could not be parsed") pure (timeOfDayFromString timeOfDayString)
 
-chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
+chainl1 :: (Alternative p, Monad p) => p a -> p (a -> a -> a) -> p a
 chainl1 p op = do
   x <- p
   rest x
@@ -89,7 +94,24 @@ chainl1 p op = do
         rest (f x y)
         <|> return x
 
-message :: String -> Parser ()
+many1 :: (Alternative p) => p a -> p [a]
+many1 p = liftA2 (:) p (many p)
+
+surroundedBy :: (P.MonadParsec e Text p) => p s -> p a -> p a
+surroundedBy s p = do
+  _ <- s
+  a <- p
+  _ <- s
+  pure a
+
+stringLiteralP :: (P.MonadParsec e Text p) => p Text
+stringLiteralP = do
+  _ <- P.char '"'
+  txt <- P.takeWhile1P (Just "String literal") (/= '\"')
+  _ <- P.char '"'
+  pure txt
+
+message :: (P.MonadParsec e Text p) => String -> p ()
 message str = do
   !() <- traceShow str (pure ())
   pure ()

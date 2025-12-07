@@ -1,12 +1,15 @@
 module NeoNote.Note.Note where
 
 import Data.Coerce (coerce)
+import Data.Flag
 import Data.List (intersperse, sortBy)
 import Data.Map qualified as M
+import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
+import {-# SOURCE #-} NeoNote.Note.Syntax.Pattern (Pattern)
 import NeoNote.Time
 import Optics.Core (Lens', coerced, (%), (^.))
 
@@ -17,6 +20,9 @@ noteIdToText (NoteId uuid) = idToText uuid
 
 noteIdFromText :: Text -> Maybe NoteId
 noteIdFromText text = NoteId <$> parseId text
+
+newtype AutoProperties = AutoProperties (M.Map PropertyName Pattern)
+  deriving (Semigroup, Monoid)
 
 data DateLiteral
   = DateLiteralCreated
@@ -34,7 +40,7 @@ data Comparison
   deriving (Eq, Ord, Show, Generic)
 
 data NoteFilter
-  = HasField FieldName
+  = HasProperty PropertyName
   | Check Comparison Literal Literal
   | Not NoteFilter
   | Together NoteFilter NoteFilter
@@ -45,7 +51,7 @@ data NoteFilter
   deriving (Show, Eq, Ord, Generic)
 
 data Literal
-  = FieldLiteral FieldName
+  = PropertyLiteral PropertyName
   | DateLiteral DateLiteral
   | IdLiteral
   | StringLiteral Text
@@ -53,18 +59,22 @@ data Literal
   deriving (Eq, Ord, Show, Generic)
 
 data Value
-  = NoValue
-  | StringValue Text
+  = StringValue Text
   | IntValue Int
+  | NoValue
   deriving (Eq, Ord, Show)
 
-newtype FieldName = FieldName {name :: Text} deriving (Eq, Ord, Show, Generic)
+newtype PropertyName = PropertyName {name :: Text} deriving (Eq, Ord, Show, Generic)
 
-newtype Fields = Fields {kv :: M.Map FieldName Value} deriving (Eq, Ord, Show, Generic)
+newtype Properties = Properties {kv :: M.Map PropertyName (S.Set Value)} deriving (Eq, Ord, Show, Generic, Semigroup, Monoid)
+
+propertyValues :: Properties -> [(PropertyName, Value)]
+propertyValues (Properties properties) =
+  foldMap (\(n, vs) -> (n,) <$> vs) (M.toList $ fmap S.toList properties)
 
 data NoteInfo = NoteInfo
   { id :: NoteId,
-    fields :: Fields,
+    properties :: Properties,
     extension :: Text,
     created :: Time,
     modified :: Time
@@ -106,13 +116,13 @@ orderNote noteAttribute info1 info2 = case noteAttribute of
   AttributeCreated -> compareField #created
   AttributeModified -> compareField #modified
   AttributeExtension -> compareField #extension
-  AttributeProperties -> compareField #fields
+  AttributeProperties -> compareField #properties
   where
     compareField :: (Ord a) => Lens' NoteInfo a -> Ordering
     compareField field = compare (info2 ^. field) (info1 ^. field)
 
-concatFields :: Fields -> Text
-concatFields fields = mconcat $ intersperse "," $ coerce $ M.keys (fields ^. #kv)
+concatProperties :: Properties -> Text
+concatProperties properties = mconcat $ intersperse "," $ coerce $ M.keys (properties ^. #kv)
 
 data OrderBy a = Descending a | Ascending a deriving (Show, Eq, Ord, Generic)
 

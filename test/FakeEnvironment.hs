@@ -1,5 +1,6 @@
 module FakeEnvironment where
 
+import Data.Map qualified as M
 import Data.Text (Text)
 import Effectful
 import Effectful.Dispatch.Dynamic
@@ -14,6 +15,7 @@ import NeoNote.Data.Id (runMakeId)
 import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Highlight (runHighlight)
+import NeoNote.Note.Note (AutoProperties (..))
 import NeoNote.Run
 import NeoNote.Store.Database (runDatabase)
 import NeoNote.Store.Note (runNoteStore)
@@ -27,6 +29,7 @@ runFakeIO :: FakeData -> Eff AppEffects a -> IO (FakeOutput a)
 runFakeIO fakeData eff = do
   (result, messages) <-
     runEff
+      . withUnliftStrategy (ConcUnlift Persistent Unlimited)
       . runFakeConfiguration fakeData
       . runFakeLog
       . runFakeError
@@ -42,9 +45,11 @@ runFakeIO fakeData eff = do
 
 data FakeData = FakeData
   { defaultExtension :: Text,
-    editorWrites :: [Text]
+    editorWrites :: [EditorWrite]
   }
-  deriving (Generic, Show, Eq, Ord)
+  deriving (Generic)
+
+data EditorWrite = Append Text | Replace Text Text
 
 data FakeOutput a = FakeOutput
   { logs :: [Message],
@@ -68,7 +73,8 @@ runFakeConfiguration fakeData eff = do
         Configuration
           { notesPath = JustGetField fakeFolderName,
             editor = InsertEditorCmd,
-            noteExtension = JustGetField "md"
+            noteExtension = JustGetField "md",
+            autoProperties = JustGetField $ AutoProperties M.empty
           }
   liftIO $ createDirectoryIfMissing True fakeFolderName
   reinterpret
@@ -78,9 +84,11 @@ runFakeConfiguration fakeData eff = do
           case config ^. optic of
             JustGetField a -> pure a
             InsertEditorCmd -> do
-              text <- head <$> get
-              modify @[Text] tail
-              pure $ "echo -n \"" <> text <> "\" >>%"
+              editorWrite <- head <$> get
+              modify @[EditorWrite] tail
+              pure $ case editorWrite of
+                Append text -> "echo -n \"" <> text <> "\" >>%"
+                Replace pattern replace -> "sed -i \"s/" <> pattern <> "/" <> replace <> "/g\" %"
     )
     eff
 

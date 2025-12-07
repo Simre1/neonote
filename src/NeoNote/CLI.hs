@@ -10,12 +10,9 @@ module NeoNote.CLI
     runCLI,
     PickerCallbacks (..),
     PickedAction (..),
-    EditHandle (..),
-    IsEditorOpen (..),
   )
 where
 
-import Data.Functor ((<&>))
 import Data.List.NonEmpty
 import Data.Text
 import Data.Text.IO qualified as T
@@ -26,7 +23,7 @@ import Effectful.TH (makeEffect)
 import NeoNote.Actions (Action)
 import NeoNote.CLI.DisplayNote (displayNoteInTerminal)
 import NeoNote.CLI.DisplayNotes
-import NeoNote.CLI.Editor (EditHandle (..), IsEditorOpen (..), runEditor)
+import NeoNote.CLI.Editor (runEditor)
 import NeoNote.CLI.ParseArguments (parseActionFromArguments)
 import NeoNote.CLI.Picker (PickedAction (..), PickerCallbacks (..), picker)
 import NeoNote.CLI.Prompt
@@ -37,12 +34,12 @@ import NeoNote.Note.Highlight (Highlight)
 import NeoNote.Note.Note
 import NeoNote.Store.Note (NoteStore)
 import NeoNote.Time
-import Optics.Core ((%~), (^.))
+import Optics.Core ((^.))
 import System.IO (hIsTerminalDevice, stdin)
 
 data CLI :: Effect where
   GetActionFromArguments :: CLI m Action
-  Editor :: NonEmpty (EditHandle NoteInfo m) -> CLI m ()
+  Editor :: (NoteId -> Time -> RawNote -> m ()) -> NonEmpty (NoteInfo, RawNote) -> CLI m (NonEmpty RawNote)
   Pick :: Text -> PickerCallbacks m -> CLI m ()
   Prompt :: Prompt a -> CLI m a
   DisplayNotes :: [NoteAttribute] -> [NoteInfo] -> CLI m ()
@@ -54,7 +51,8 @@ makeEffect ''CLI
 runCLI :: (IOE :> es, Highlight :> es, NoteStore :> es, GetTime :> es, Error NeoNoteError :> es, Log :> es, GetConfiguration :> es) => Eff (CLI : es) a -> Eff es a
 runCLI = interpret $ \env uiEffect -> do
   case uiEffect of
-    Editor notes -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift -> runEditor (notes <&> (#edit %~ (fmap unlift .)))
+    Editor stageEdit notes -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift ->
+      runEditor (fmap (fmap unlift) . stageEdit) notes
     GetActionFromArguments -> liftIO parseActionFromArguments
     Pick searchTerm callbacks -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift ->
       picker searchTerm $

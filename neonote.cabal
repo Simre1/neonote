@@ -47,18 +47,22 @@ common common
         effectful-th,
         transformers,
         random,
-        fsnotify
+        fsnotify,
+        Earley
 library
     import:           common
     exposed-modules:  
         Data.List.SafeIndex
+        Data.Flag
         Data.Functor.Empty
         NeoNote.Run
         NeoNote.Note.Highlight
+        NeoNote.Note.Operations
         NeoNote.Note.Note
         NeoNote.Note.Syntax.Common
         NeoNote.Note.Syntax.NoteFilter
         NeoNote.Note.Syntax.RawNote
+        NeoNote.Note.Syntax.Pattern
         NeoNote.Data.Id
         NeoNote.Store.Database
         NeoNote.Store.Database.Error
@@ -85,7 +89,7 @@ library
         typed-process,
         brick,
         vty,
-        regex-tdfa,
+        pcre2,
         megaparsec,
         data-default,
         config-ini,

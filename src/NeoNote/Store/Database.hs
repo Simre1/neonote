@@ -4,23 +4,27 @@ import Control.Monad (forM_, when)
 import Control.Monad.Trans.State
 import Data.Bifunctor (Bifunctor (..), bimap)
 import Data.Coerce
-import Data.List (intersperse)
+import Data.Foldable (traverse_)
+import Data.IORef
+import Data.List (groupBy, intersperse)
 import Data.Map qualified as M
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.Set qualified as S
 import Data.String.Interpolate (__i)
 import Data.Text as T (Text, null, pack)
 import Data.Traversable
 import Database.SQLite.Simple qualified as DB
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpret, localLiftUnlift, localSeqUnlift, localUnlift)
 import Effectful.Error.Dynamic
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Note.Note
+import NeoNote.Note.Operations
 import NeoNote.Store.Database.Error
-import NeoNote.Time (IncompleteTime (..), formatTime, timeFromString)
+import NeoNote.Time (IncompleteTime (..), Time, formatTime, timeFromString)
 import Optics.Core
 import System.FilePath (joinPath)
 
@@ -32,6 +36,8 @@ data Database :: Effect where
   DbFindNotes :: NoteFilter -> Selection -> Database m [NoteId]
   DbNoteExists :: NoteId -> Database m Bool
   DbDeleteNote :: NoteId -> Database m ()
+  DbStageEdit :: ((NoteId -> Time -> RawNote -> m ()) -> m a) -> Database m a
+  DbCommitStagedEdits :: (NoteId -> Time -> RawNote -> m (Update Note)) -> Database m ()
 
 data Selection = Selection
   { amount :: Int,
@@ -54,16 +60,70 @@ runDatabase eff = do
       unlift $ runDatabaseError $ do
         maybe (pure ()) throwError maybeTableVersionError
         interpret
-          ( \_ databaseEffect -> case databaseEffect of
+          ( \env databaseEffect -> case databaseEffect of
               DbNoteExists noteId -> handleNoteExists connection noteId
               DbWriteNoteInfo noteInfo -> handleWriteNoteInfo connection noteInfo
-              DbWriteNotes note -> handleWriteNote connection note
+              DbWriteNotes note -> handleWriteNote True connection note
               DbReadNote note -> handleReadNote connection note
               DbReadNoteInfo noteId -> handleReadNoteInfo connection noteId
               DbFindNotes notesFilter selection -> handleFindNotes connection notesFilter selection
-              DbDeleteNote noteId -> handleDBDeleteNote connection noteId
+              DbDeleteNote noteId -> handleDBDeleteNote True connection noteId
+              DbStageEdit make -> localLiftUnlift env (ConcUnlift Persistent Unlimited) $ \lift unlift ->
+                handleStageEdit connection (\kont -> unlift $ make (\a b c -> lift $ kont a b c))
+              DbCommitStagedEdits makeNote -> localUnlift env (ConcUnlift Persistent Unlimited) $ \unlift ->
+                handleCommitStagedEdits connection (fmap (fmap unlift) . makeNote)
           )
           (inject eff)
+
+handleStageEdit :: (IOE :> es) => DB.Connection -> ((NoteId -> Time -> RawNote -> Eff es ()) -> Eff es a) -> Eff es a
+handleStageEdit connection kont = do
+  stagedNotes <- liftIO $ newIORef S.empty
+  let stage noteId modificationTime (RawNote rawNote) = liftIO $ do
+        DB.execute
+          connection
+          [__i|  
+              insert or replace into openedits (noteId, modified, raw)
+              values (?, ?, ?)
+            |]
+          (noteIdToText noteId, formatTime modificationTime, rawNote)
+        atomicModifyIORef' stagedNotes (\s -> (S.insert noteId s, ()))
+  a <- kont stage
+  noteIds <- fmap S.toList $ liftIO $ readIORef stagedNotes
+  liftIO $ do
+    DB.executeMany
+      connection
+      [__i|  
+        delete from openedits
+        where noteId = ?
+        |]
+      (DB.Only . noteIdToText <$> noteIds)
+  pure a
+
+handleCommitStagedEdits :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> (NoteId -> Time -> RawNote -> Eff es (Update Note)) -> Eff es ()
+handleCommitStagedEdits connection makeNote = withRunInIO $ \unlift -> liftIO $ DB.withTransaction connection $ do
+  openEdits <-
+    liftIO $
+      DB.query
+        connection
+        [__i| select noteId, modified, raw from openedits|]
+        ()
+
+  scheduledUpdates <- for openEdits $ \(noteIdString, modifiedTimeString, rawNote) -> do
+    noteId <- maybe (unlift $ throwError $ CorruptedNoteId noteIdString) pure $ noteIdFromText noteIdString
+    modifiedTime <- maybe (unlift $ throwError $ InvalidDateFormat noteId modifiedTimeString) pure $ timeFromString modifiedTimeString
+    update <- unlift $ makeNote noteId modifiedTime (RawNote rawNote)
+    pure (noteId, update)
+
+  let (writes, deletes) = partitionUpdates scheduledUpdates
+
+  unlift $ handleWriteNote False connection (snd <$> writes)
+  unlift $ traverse_ (handleDBDeleteNote False connection) deletes
+
+  liftIO $
+    DB.execute
+      connection
+      [__i| delete from openedits |]
+      ()
 
 newParam :: Text -> State [DB.NamedParam] Text
 newParam input = do
@@ -80,15 +140,15 @@ newParamInt input = do
   pure paramName
 
 noteFilterToCondition :: NoteFilter -> State [DB.NamedParam] Text
-noteFilterToCondition (HasField fieldName) = do
-  param <- newParam $ coerce fieldName
-  pure [__i| (exists ( select noteId, field from fields where id = noteId and field = #{param})) |]
+noteFilterToCondition (HasProperty propertyName) = do
+  param <- newParam $ coerce propertyName
+  pure [__i| (exists ( select noteId from properties where id = noteId and property = #{param})) |]
 noteFilterToCondition (Check comp (DateLiteral dl1) (DateLiteral dl2)) =
   dateLiteralToCondition comp (Left dl1) (Left dl2)
-noteFilterToCondition (Check comp (DateLiteral dl1) (FieldLiteral fieldName)) =
-  dateLiteralToCondition comp (Left dl1) (Right fieldName)
-noteFilterToCondition (Check comp (FieldLiteral fieldName) (DateLiteral dl2)) =
-  dateLiteralToCondition comp (Right fieldName) (Left dl2)
+noteFilterToCondition (Check comp (DateLiteral dl1) (PropertyLiteral propertyName)) =
+  dateLiteralToCondition comp (Left dl1) (Right propertyName)
+noteFilterToCondition (Check comp (PropertyLiteral propertyName) (DateLiteral dl2)) =
+  dateLiteralToCondition comp (Right propertyName) (Left dl2)
 noteFilterToCondition (Check _ (DateLiteral _) _) = pure "(1=1)"
 noteFilterToCondition (Check _ _ (DateLiteral _)) = pure "(1=1)"
 noteFilterToCondition (Check comp l1 l2) = nonDateLiteralToCondition comp l1 l2
@@ -125,9 +185,9 @@ nonDateLiteralToCondition comp l1 l2 = do
   pure [__i| (#{comparisonToSql comp v1 v2}) |]
 
 getNonDateLiteral :: Literal -> State [DB.NamedParam] Text
-getNonDateLiteral (FieldLiteral fieldName) = do
-  param <- newParam (fieldName ^. #name)
-  pure [__i| (select value from fields where noteId = id and field = #{param}) |]
+getNonDateLiteral (PropertyLiteral propertyName) = do
+  param <- newParam (propertyName ^. #name)
+  pure [__i| (select value from properties where noteId = id and property = #{param}) |]
 getNonDateLiteral IdLiteral = pure [__i| id |]
 getNonDateLiteral (StringLiteral txt) = do
   param <- newParam txt
@@ -137,7 +197,7 @@ getNonDateLiteral (IntLiteral n) = do
   pure [__i| #{param} |]
 getNonDateLiteral (DateLiteral _) = error "Cannot get date literal"
 
-dateLiteralToCondition :: Comparison -> Either DateLiteral FieldName -> Either DateLiteral FieldName -> State [DB.NamedParam] Text
+dateLiteralToCondition :: Comparison -> Either DateLiteral PropertyName -> Either DateLiteral PropertyName -> State [DB.NamedParam] Text
 dateLiteralToCondition comp d1 d2 = do
   let sqlConcat atoms = mconcat $ intersperse " || " atoms
   timePartConditions <- forM timeParts $ \tp -> do
@@ -150,14 +210,14 @@ dateLiteralToCondition comp d1 d2 = do
       then comparisonToSql comp c1 c2
       else "1=1"
   where
-    makeTimePartCondition :: (Lens' IncompleteTime (Maybe Int), Text) -> Either DateLiteral FieldName -> State [DB.NamedParam] (Maybe Text)
+    makeTimePartCondition :: (Lens' IncompleteTime (Maybe Int), Text) -> Either DateLiteral PropertyName -> State [DB.NamedParam] (Maybe Text)
     makeTimePartCondition (timePartLens, timePartFormat) dateLiteral = case dateLiteral of
       Left DateLiteralCreated -> pure $ Just [__i| ltrim(strftime('#{timePartFormat}', created), '0')|]
       Left DateLiteralModified -> pure $ Just [__i|ltrim(strftime('#{timePartFormat}', modified), '0')|]
       Left (DateLiteralTime incompleteTime) -> pure $ (\a -> "'" <> a <> "'") . pack . show <$> incompleteTime ^. timePartLens
-      Right fieldName -> do
-        param <- newParam (fieldName ^. #name)
-        pure $ Just [__i|ltrim(strftime('#{timePartFormat}', (select value from fields where noteId = id and field = #{param}) ), '0')|]
+      Right propertyName -> do
+        param <- newParam (propertyName ^. #name)
+        pure $ Just [__i|ltrim(strftime('#{timePartFormat}', (select value from properties where noteId = id and property = #{param}) ), '0')|]
     timeParts :: [(Lens' IncompleteTime (Maybe Int), Text)]
     timeParts = [(#year, "%Y"), (#month, "%m"), (#day, "%d"), (#hour, "%H"), (#minute, "%M"), (#seconds, "%S")]
 
@@ -171,9 +231,9 @@ handleNoteExists connection noteId = do
     throwError (TooManyResults noteId)
   pure $ length results == 1
 
-handleDBDeleteNote :: (IOE :> es) => DB.Connection -> NoteId -> Eff es ()
-handleDBDeleteNote connection noteId =
-  liftIO $ DB.withTransaction connection $ do
+handleDBDeleteNote :: (IOE :> es) => Bool -> DB.Connection -> NoteId -> Eff es ()
+handleDBDeleteNote transaction connection noteId =
+  liftIO $ (if transaction then DB.withTransaction connection else id) $ do
     DB.execute
       connection
       [__i|  
@@ -184,7 +244,7 @@ handleDBDeleteNote connection noteId =
     DB.execute
       connection
       [__i|  
-        delete from fields
+        delete from properties
         where noteId = ?
       |]
       (DB.Only $ noteIdToText noteId)
@@ -206,21 +266,25 @@ handleWriteNoteInfo connection noteInfo =
     DB.execute
       connection
       [__i|  
-        delete from fields
+        delete from properties
         where noteId = ?
       |]
       (DB.Only $ noteIdToText (noteInfo ^. #id))
-    forM_ (M.toList $ noteInfo ^. #fields % #kv) $ \(field, value) ->
-      DB.execute
-        connection
-        [__i|
-          insert into fields (noteId, field, value)
-          values (?,?,?)
-        |]
-        ( noteIdToText (noteInfo ^. #id),
-          coerce @_ @Text field,
-          valueToSql value
-        )
+    insertProperties connection (noteInfo ^. #id) (noteInfo ^. #properties)
+
+insertProperties :: DB.Connection -> NoteId -> Properties -> IO ()
+insertProperties connection noteId properties = do
+  forM_ (propertyValues properties) $ \(property, value) ->
+    DB.execute
+      connection
+      [__i|
+              insert into properties (noteId, property, value)
+              values (?,?,?)
+            |]
+      ( noteIdToText noteId,
+        coerce @_ @Text property,
+        valueToSql value
+      )
 
 handleReadNoteInfo :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> NoteId -> Eff es NoteInfo
 handleReadNoteInfo connection noteId = do
@@ -234,7 +298,7 @@ handleReadNoteInfo connection noteId = do
             where id = ?)
         |]
         (DB.Only $ noteIdToText noteId)
-  resultFields <- readFields connection noteId
+  propertyResults <- readProperties connection noteId
   case resultsNotes of
     [] -> throwError (MissingNoteId noteId)
     [(extension, createdText, modifiedText)] -> do
@@ -247,7 +311,7 @@ handleReadNoteInfo connection noteId = do
       pure $
         NoteInfo
           { id = noteId,
-            fields = resultFields,
+            properties = propertyResults,
             created = created,
             modified = modified,
             extension = extension
@@ -281,11 +345,11 @@ handleFindNotes connection notesFilter selection = do
       AttributeCreated -> "created"
       AttributeModified -> "modified"
       AttributeExtension -> "extension"
-      AttributeProperties -> [__i| (group_concat(select field from fields where noteId = id order by field))|]
+      AttributeProperties -> [__i| (group_concat(select property from properties where noteId = id order by property))|]
 
-handleWriteNote :: (IOE :> es) => DB.Connection -> [Note] -> Eff es ()
-handleWriteNote connection notes =
-  liftIO $ DB.withTransaction connection $ forM_ notes $ \(Note noteInfo (NoteContent noteContent)) -> do
+handleWriteNote :: (IOE :> es) => Bool -> DB.Connection -> [Note] -> Eff es ()
+handleWriteNote transaction connection notes =
+  liftIO $ (if transaction then DB.withTransaction connection else id) $ forM_ notes $ \(Note noteInfo (NoteContent noteContent)) -> do
     DB.execute
       connection
       [__i|  
@@ -301,21 +365,18 @@ handleWriteNote connection notes =
     DB.execute
       connection
       [__i|  
-        delete from fields
+        delete from openedits
         where noteId = ?
       |]
       (DB.Only $ noteIdToText (noteInfo ^. #id))
-    forM_ (M.toList $ noteInfo ^. #fields % #kv) $ \(field, value) ->
-      DB.execute
-        connection
-        [__i|
-          insert into fields (noteId, field, value)
-          values (?,?,?)
-        |]
-        ( noteIdToText (noteInfo ^. #id),
-          coerce @_ @Text field,
-          valueToSql value
-        )
+    DB.execute
+      connection
+      [__i|  
+        delete from properties
+        where noteId = ?
+      |]
+      (DB.Only $ noteIdToText (noteInfo ^. #id))
+    insertProperties connection (noteInfo ^. #id) (noteInfo ^. #properties)
 
 handleReadNote :: (IOE :> es, Error DatabaseError :> es) => DB.Connection -> NoteId -> Eff es Note
 handleReadNote connection noteId = do
@@ -329,7 +390,7 @@ handleReadNote connection noteId = do
             where id = ?)
         |]
         (DB.Only $ noteIdToText noteId)
-  resultFields <- readFields connection noteId
+  propertyResults <- readProperties connection noteId
   case resultsNotes of
     [] -> throwError (MissingNoteId noteId)
     [(extension, createdText, modifiedText, noteContent)] -> do
@@ -344,7 +405,7 @@ handleReadNote connection noteId = do
           { info =
               NoteInfo
                 { id = noteId,
-                  fields = resultFields,
+                  properties = propertyResults,
                   created = created,
                   modified = modified,
                   extension = extension
@@ -365,50 +426,28 @@ checkTableVersion connection = DB.withTransaction connection $ do
         then pure Nothing
         else do
           migrate tableVersion currentVersion
-          pure $ Just $ IncompatibleTableVersion currentVersion tableVersion
+          pure $ Just $ IncompatibleTableVersion tableVersion currentVersion
     _ -> pure $ Just $ CorruptedTable "versions"
   where
     currentVersion :: Int
-    currentVersion = 3
+    currentVersion = 4
     migrate :: Int -> Int -> IO ()
     migrate n _
-      | n == 1 || n == 2 = do
+      | n < currentVersion = do
           putStrLn "Automatic migration is not possible."
           putStrLn "You need to upload all notes manually:\n1. Backup notes with nn export -o backup_folder\n2. Update neonote\n3. Delete notes folder\n4. nn import backup_folder/*"
-    migrate _ _ = error "Weird versions"
+    migrate n m = do
+      putStrLn [__i| Table version #{n} is higher then neonote version #{m}" |]
 
-readFields :: (IOE :> es) => DB.Connection -> NoteId -> Eff es Fields
-readFields connection noteId = liftIO $ do
-  fieldRows :: [(Text, DB.SQLData)] <-
+readProperties :: (IOE :> es) => DB.Connection -> NoteId -> Eff es Properties
+readProperties connection noteId = liftIO $ do
+  propertyRows :: [(Text, DB.SQLData)] <-
     DB.query
       connection
-      [__i|
-        select field, value from
-          (select noteId, field, value from fields
-          where noteId = ?)
-      |]
+      [__i| select property, value from properties where noteId = ? |]
       (DB.Only $ noteIdToText noteId)
-  pure $ Fields $ M.fromList $ fmap (first FieldName . second sqlToValue) fieldRows
-
--- readFields :: (Traversable f) => DB.Connection -> f NoteId -> IO (f Fields)
--- readFields connection noteIds =
---   liftIO $ do
---     fieldRows :: [(Text, DB.SQLData)] <-
---       DB.query
---         connection
---         [__i|
---         select field, value from
---           (select noteId, field, value from fields
---           where noteId = ?)
---       |]
---         (noteIdToText <$> toList noteIds)
---     pure $ flip evalState fieldRows $ for noteIds $ \_ -> do
---       s <- get
---       case s of
---         (fields : rest) -> do
---           put rest
---           pure $ Fields $ M.fromList $ fmap (first FieldName . second sqlToValue) fields
---         [] -> error "readFields failed, not enough results"
+  let propertyMap = M.fromListWith (++) $ fmap (first PropertyName . second pure) propertyRows
+  pure $ Properties $ S.fromList . mapMaybe sqlToValue <$> propertyMap
 
 comparisonToSql :: Comparison -> Text -> Text -> Text
 comparisonToSql Equal v1 v2 = v1 <> " = " <> v2
@@ -419,17 +458,18 @@ comparisonToSql LesserEqual v1 v2 = v1 <> " <= " <> v2
 comparisonToSql Similar v1 v2 = v1 <> " LIKE '%' || " <> v2 <> " || '%'"
 
 valueToSql :: Value -> DB.SQLData
-valueToSql NoValue = DB.SQLNull
 valueToSql (IntValue n) = DB.SQLInteger (fromIntegral n)
 valueToSql (StringValue txt) = DB.SQLText txt
+valueToSql NoValue = DB.SQLNull
 
-sqlToValue :: DB.SQLData -> Value
-sqlToValue (DB.SQLInteger n) = IntValue (fromIntegral n)
-sqlToValue (DB.SQLText txt) = StringValue txt
-sqlToValue _ = NoValue
+sqlToValue :: DB.SQLData -> Maybe Value
+sqlToValue (DB.SQLInteger n) = Just (IntValue (fromIntegral n))
+sqlToValue (DB.SQLText txt) = Just (StringValue txt)
+sqlToValue DB.SQLNull = Just NoValue
+sqlToValue _ = Nothing
 
 tables :: [DB.Query]
-tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, fieldTable, configTable] ++ searchTable
+tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, propertyTable, configTable, openEditsTable] ++ searchTable
   where
     noteTable :: DB.Query
     noteTable =
@@ -442,13 +482,22 @@ tables = ["PRAGMA encoding = \"UTF-8\"", noteTable, fieldTable, configTable] ++ 
           content TEXT
           )
       |]
-    fieldTable :: DB.Query
-    fieldTable =
+    propertyTable :: DB.Query
+    propertyTable =
       [__i|
-        CREATE TABLE IF NOT EXISTS fields
+        CREATE TABLE IF NOT EXISTS properties
           (noteId TEXT NOT NULL,
-          field TEXT NOT NULL,
+          property TEXT NOT NULL,
           value TEXT
+          )
+      |]
+    openEditsTable :: DB.Query
+    openEditsTable =
+      [__i|
+        CREATE TABLE IF NOT EXISTS openedits
+          (noteId TEXT PRIMARY KEY NOT NULL,
+           modified TEXT NOT NULL,
+           raw TEXT
           )
       |]
     configTable :: DB.Query

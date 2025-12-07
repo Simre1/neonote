@@ -2,7 +2,6 @@ module NeoNote.CLI.Editor where
 
 import Control.Exception (catch, finally)
 import Control.Monad (guard, zipWithM_)
-import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (coerce)
 import Data.Foldable (find)
 import Data.List.NonEmpty
@@ -11,29 +10,25 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as T (readFile, writeFile)
 import Effectful
 import Effectful.Error.Dynamic
-import GHC.Generics
 import NeoNote.Configuration
 import NeoNote.Error
 import NeoNote.Log
 import NeoNote.Note.Note
+import NeoNote.Time
 import Optics.Core
 import System.Directory (createDirectoryIfMissing, getTemporaryDirectory, removeFile)
 import System.FSNotify
-import System.FilePath (joinPath, takeBaseName, takeFileName, (</>))
+import System.FilePath (joinPath, takeFileName, (</>))
 import System.Process.Typed
 import System.Random (randomRIO)
 
-runEditor :: (Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => NonEmpty (EditHandle NoteInfo (Eff es)) -> Eff es ()
-runEditor notes = do
+runEditor :: (GetTime :> es, Log :> es, IOE :> es, GetConfiguration :> es, Error NeoNoteError :> es) => (NoteId -> Time -> RawNote -> Eff es ()) -> NonEmpty (NoteInfo, RawNote) -> Eff es (NonEmpty RawNote)
+runEditor stageEdit notes = do
   editorCommandTemplate <- getConfiguration #editor
-  suffix <- pack . show <$> randomRIO @Int (10000, 99999)
-  let fileName noteInfo = suffix <> "-" <> noteFileName noteInfo
   withRunInIO $ \unlift ->
-    let files =
-          notes
-            <&> (#identifier %~ fileName)
-            . (#edit %~ (fmap unlift .))
-     in catch (runEditorTemporaryFile editorCommandTemplate files) $ \e ->
+    let stageEditIO = fmap (fmap unlift) . stageEdit
+     in -- (#edit %~ (fmap unlift .))
+        catch (runEditorTemporaryFile editorCommandTemplate stageEditIO (unlift getCurrentTime) notes) $ \e ->
           unlift $ throwError $ EditingCrashed e
 
 buildEditorCommand :: Text -> Text -> Text
@@ -42,22 +37,17 @@ buildEditorCommand editorCommandTemplate notePath =
     then T.replace "%" notePath editorCommandTemplate
     else editorCommandTemplate <> " " <> notePath
 
-data EditHandle a m = EditHandle
-  { oldContent :: RawNote,
-    edit :: IsEditorOpen -> RawNote -> m (),
-    identifier :: a
-  }
-  deriving (Generic)
+runEditorTemporaryFile :: Text -> (NoteId -> Time -> RawNote -> IO ()) -> IO Time -> NonEmpty (NoteInfo, RawNote) -> IO (NonEmpty RawNote)
+runEditorTemporaryFile editorCommandTemplate stageEdit getTimeIO notes = do
+  suffix <- pack . show <$> randomRIO @Int (10000, 99999)
+  let fileName noteInfo = suffix <> "-" <> noteFileName noteInfo
+  let fileNames = fileName . fst <$> notes
 
-data IsEditorOpen = EditorOpen | EditorClosed deriving (Eq, Ord, Show)
-
-runEditorTemporaryFile :: Text -> NonEmpty (EditHandle Text IO) -> IO ()
-runEditorTemporaryFile editorCommandTemplate files = do
-  withTemporaryFiles (files ^. mapping #identifier) $ \tmpDir filePaths -> do
+  withTemporaryFiles fileNames $ \tmpDir filePaths -> do
     zipWithM_
       (\filePath oldContent -> T.writeFile filePath $ coerce oldContent)
       (toList filePaths)
-      (toList $ files ^. mapping #oldContent)
+      (toList $ snd <$> notes)
 
     withManager $ \manager -> do
       let isNoteEvent = \case
@@ -66,25 +56,22 @@ runEditorTemporaryFile editorCommandTemplate files = do
           action = \case
             Modified {eventPath} -> do
               let filename = takeFileName eventPath
-              case find (\eh -> eh ^. #identifier == T.pack filename) files of
-                Just eh -> do
+              case find (\(ni, _) -> fileName ni == T.pack filename) notes of
+                Just (ni, _) -> do
                   rawNote <- T.readFile (tmpDir </> filename)
-                  (eh ^. #edit) EditorOpen (RawNote rawNote)
+                  modificationTime <- getTimeIO
+                  coerce stageEdit (ni ^. #id) modificationTime (RawNote rawNote)
                 Nothing -> pure ()
             _ -> pure ()
 
       stopListening <- watchDir manager tmpDir isNoteEvent action
 
       let cmd = shell $ unpack $ buildEditorCommand editorCommandTemplate (pack $ concat $ intersperse " " filePaths)
-      exitCode <-
-        runProcess cmd `finally` do
-          newNoteContents <- traverse T.readFile filePaths
-          zipWithM_
-            ($)
-            (fmap ($ EditorClosed) $ toList $ files ^. mapping #edit)
-            (toList $ RawNote <$> newNoteContents)
+      exitCode <- runProcess cmd
       stopListening
       guard $ exitCode == ExitSuccess
+      newNoteContents <- traverse T.readFile filePaths
+      pure $ RawNote <$> newNoteContents
 
 withTemporaryFiles :: NonEmpty Text -> (FilePath -> NonEmpty FilePath -> IO a) -> IO a
 withTemporaryFiles filenames handle = do

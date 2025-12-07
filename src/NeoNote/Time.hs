@@ -6,7 +6,7 @@ import Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
 import Data.Time qualified as Time
 import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 import Effectful
-import Effectful.Dispatch.Dynamic (interpret)
+import Effectful.Dispatch.Dynamic (interpose_, interpret)
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
 import Optics.Core
@@ -122,3 +122,6 @@ makeEffect ''GetTime
 
 runGetTime :: (IOE :> es) => Eff (GetTime : es) a -> Eff es a
 runGetTime = interpret $ \_ GetCurrentTime -> Time <$> liftIO Time.getCurrentTime
+
+interposeGetTime :: (GetTime :> es) => Time -> Eff es a -> Eff es a
+interposeGetTime time = interpose_ $ \GetCurrentTime -> pure time

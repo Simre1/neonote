@@ -1,6 +1,6 @@
 module NeoNote.Run where
 
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, when, zipWithM_)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
@@ -32,6 +32,7 @@ type AppEffects = [CLI, Highlight, NoteStore, MakeId, Database, Cache, GetTime, 
 
 runNeoNote :: IO ()
 runNeoNote = runIO $ withUnliftStrategy (ConcUnlift Persistent Unlimited) $ do
+  commitStaged
   action <- getActionFromArguments
   handleAction action
 
@@ -63,12 +64,13 @@ handleAction action = case action of
 
 runCreateNoteAction :: (IOE :> es, CLI :> es, Log :> es, NoteStore :> es) => Text -> Bool -> Eff es ()
 runCreateNoteAction initialText1 skipEditor = do
-  createNote $ \noteInfo kont -> do
+  createNote $ \noteInfo -> do
     initialText2 <- getStandardInput
     let initialText = initialText1 <> initialText2
     if skipEditor
-      then kont EditorClosed (RawNote initialText)
-      else editor (pure $ EditHandle {identifier = noteInfo, edit = kont, oldContent = RawNote initialText})
+      then pure (RawNote initialText)
+      else stageEdit $ \stage ->
+        NE.head <$> editor stage (NE.singleton (noteInfo, RawNote initialText))
 
 runEditNoteAction :: (CLI :> es, NoteStore :> es, Error NeoNoteError :> es, Log :> es, GetTime :> es) => Int -> Text -> Eff es ()
 runEditNoteAction amount searchTerm = do
@@ -80,14 +82,8 @@ runEditNoteAction amount searchTerm = do
       let noteIds = a :| as
       notes <- traverse readNote noteIds
 
-      editor $ flip fmap notes $ \note ->
-        EditHandle
-          { identifier = note ^. #info,
-            oldContent = noteToRaw note,
-            edit = \case
-              EditorClosed -> writeNote note
-              EditorOpen -> skipLogging . writeNote note
-          }
+      newContent <- stageEdit $ \stage -> editor stage ((\note -> (note ^. #info, noteToRaw note)) <$> notes)
+      zipWithM_ writeNote (NE.toList notes) (NE.toList newContent)
 
 runPickNoteAction :: (IOE :> es, CLI :> es, NoteStore :> es, GetTime :> es, Log :> es) => Text -> Eff es ()
 runPickNoteAction initialSearchTerm = do
@@ -97,15 +93,8 @@ runPickNoteAction initialSearchTerm = do
       { handlePickedAction = \case
           (PickedEdit noteInfo) -> do
             note <- readNote (noteInfo ^. #id)
-            editor $
-              pure $
-                EditHandle
-                  { identifier = note ^. #info,
-                    oldContent = noteToRaw note,
-                    edit = \case
-                      EditorClosed -> writeNote note
-                      EditorOpen -> skipLogging . writeNote note
-                  }
+            newContent NE.:| _ <- stageEdit $ \stage -> editor stage (NE.singleton (note ^. #info, noteToRaw note))
+            writeNote note newContent
             pure False
           (PickedDelete noteInfo) -> do
             note <- readNote (noteInfo ^. #id)
@@ -122,7 +111,7 @@ runPickNoteAction initialSearchTerm = do
           time <- getCurrentTime
           case parseNoteFilter time searchTerm of
             Right newNoteFilter -> do
-              noteIds <- findNotes newNoteFilter (Selection {amount = 10, order = Descending AttributeModified})
+              noteIds <- findNotes newNoteFilter (Selection {amount = 15, order = Descending AttributeModified})
               noteInfos <- traverse readNoteInfo noteIds
               liftIO $ writeIORef selectedNotesRef noteInfos
             Left _ -> pure ()
@@ -187,6 +176,9 @@ runExportNotesAction maybePath text = do
     let filepath = dirPath </> (T.unpack $ noteFileName $ note ^. #info)
     let rawNote = noteToRaw note
     T.writeFile filepath (rawNote ^. coerced)
+
+commitStaged :: (Log :> es, NoteStore :> es, IOE :> es) => Eff es ()
+commitStaged = commitStagedEdits
 
 makeNoteFilter :: (GetTime :> es, Error NeoNoteError :> es) => Text -> Eff es NoteFilter
 makeNoteFilter searchText = do

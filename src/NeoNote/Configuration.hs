@@ -1,31 +1,34 @@
 module NeoNote.Configuration (Configuration (..), injectConfiguration, GetConfiguration (..), getConfiguration) where
 
-import Control.Applicative ((<|>))
+import Control.Applicative (empty, (<|>))
 import Data.Either (fromRight)
+import Data.Foldable (toList)
 import Data.Functor.Identity
 import Data.Ini.Config
+import Data.Map qualified as M
+import Data.Maybe (fromMaybe)
 import Data.String.Interpolate (i)
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, unpack)
 import Data.Text.IO qualified as T (readFile, writeFile)
 import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
+import NeoNote.Note.Note (AutoProperties (..), PropertyName)
+import NeoNote.Note.Syntax.Common (makeFieldName)
+import NeoNote.Note.Syntax.Pattern
 import Optics.Core
-import System.Directory (XdgDirectory (..), doesFileExist, getXdgDirectory, createDirectoryIfMissing)
+import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesFileExist, getXdgDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (joinPath)
-import Data.Maybe (fromMaybe)
 
 data Configuration f = Configuration
   { notesPath :: f FilePath,
     editor :: f Text,
-    noteExtension :: f Text
+    noteExtension :: f Text,
+    autoProperties :: f AutoProperties
   }
   deriving (Generic)
-
-deriving instance Show (Configuration Maybe)
-deriving instance Show (Configuration Identity)
 
 data GetConfiguration :: Effect where
   GetConfiguration :: (forall f. Lens' (Configuration f) (f a)) -> GetConfiguration m a
@@ -37,18 +40,20 @@ instance Semigroup (Configuration Maybe) where
     Configuration
       { notesPath = config1 ^. #notesPath <|> config2 ^. #notesPath,
         editor = config1 ^. #editor <|> config2 ^. #editor,
-        noteExtension = config1 ^. #noteExtension <|> config2 ^. #noteExtension
+        noteExtension = config1 ^. #noteExtension <|> config2 ^. #noteExtension,
+        autoProperties = config1 ^. #autoProperties <> config2 ^. #autoProperties
       }
 
 instance Monoid (Configuration Maybe) where
-  mempty = Configuration Nothing Nothing Nothing
+  mempty = Configuration Nothing Nothing Nothing Nothing
 
 applyConfiguration :: Configuration Maybe -> Configuration Identity -> Configuration Identity
 applyConfiguration config defConfig =
   Configuration
     { notesPath = maybe (defConfig ^. #notesPath) Identity (config ^. #notesPath),
       editor = maybe (defConfig ^. #editor) Identity (config ^. #editor),
-      noteExtension = maybe (defConfig ^. #noteExtension) Identity (config ^. #noteExtension)
+      noteExtension = maybe (defConfig ^. #noteExtension) Identity (config ^. #noteExtension),
+      autoProperties = maybe (defConfig ^. #autoProperties) Identity (config ^. #autoProperties)
     }
 
 getDefaultConfiguration :: IO (Configuration Identity)
@@ -60,7 +65,8 @@ getDefaultConfiguration = do
     Configuration
       { notesPath = Identity notesPath,
         editor = Identity editor,
-        noteExtension = Identity "md"
+        noteExtension = Identity "md",
+        autoProperties = Identity (AutoProperties M.empty)
       }
 
 getEnvConfiguration :: IO (Configuration Maybe)
@@ -72,7 +78,8 @@ getEnvConfiguration = do
     Configuration
       { notesPath = notesPath,
         editor = editor,
-        noteExtension = pack <$> noteExtension
+        noteExtension = pack <$> noteExtension,
+        autoProperties = Nothing
       }
 
 getFileConfiguration :: IO (Configuration Maybe)
@@ -87,8 +94,8 @@ getFileConfiguration = do
         createDirectoryIfMissing True configDir
         T.writeFile configPath initialINIFile
         pure initialINIFile
-  let parsedConfig = parseIniFile iniFile $
-        section "DEFAULT" $ do
+  let parsedConfig = parseIniFile iniFile $ do
+        config1 <- section "DEFAULT" $ do
           editor <- fieldMbOf "editor" string
           notesPath <- fieldMbOf "notespath" string
           noteExtension <- fieldMbOf "extension" string
@@ -96,12 +103,22 @@ getFileConfiguration = do
             Configuration
               { editor = editor,
                 notesPath = notesPath,
-                noteExtension = noteExtension
+                noteExtension = noteExtension,
+                autoProperties = Nothing
               }
+        autoProperties <- sections "AUTOPROPERTY" $ do
+          propertyName <- fieldOf "name" (maybe (Left "Cannot parse field name") Right . makeFieldName)
+          patternResult <- compilePattern <$> field "pattern" <*> field "replace"
+          pattern <- either (\_ -> empty) pure patternResult
+          pure (M.singleton propertyName pattern)
+        let config2 = mempty {autoProperties = Just $ AutoProperties $ M.unions autoProperties}
+
+        pure $ config1 <> config2
   pure $ fromRight mempty parsedConfig
   where
     initialINIFile :: Text
-    initialINIFile = [i|[DEFAULT]
+    initialINIFile =
+      [i|[DEFAULT]
 ;editor=vim
 ;notespath=/home/user/Documents/neonote ;absolute path needed here!
 ;extension=md

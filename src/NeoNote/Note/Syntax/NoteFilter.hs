@@ -28,7 +28,7 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
       let hasFieldP = lexeme $ do
             _ <- P.char '#'
             fn <- fieldNameP
-            pure $ HasField fn
+            pure $ HasProperty fn
           literalP = lexeme $ P.try $ do
             P.choice
               [ do
@@ -37,7 +37,7 @@ parseNoteFilter currentTime = first (T.pack . P.errorBundlePretty) . P.parse par
                     [ IdLiteral <$ P.string "id",
                       DateLiteral DateLiteralCreated <$ (P.string "created" <|> P.string "c"),
                       DateLiteral DateLiteralModified <$ (P.string "modified" <|> P.string "m"),
-                      FieldLiteral <$> fieldNameP
+                      PropertyLiteral <$> fieldNameP
                     ],
                 DateLiteral <$> DateLiteralTime <$> timeP currentTime,
                 StringLiteral <$> quotedStringP,

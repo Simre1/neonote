@@ -18,5 +18,5 @@ displayNoteInTerminal plain frontmatter (Note noteInfo noteContent) = do
       then highlight noteInfo noteContent
       else pure $ coerce noteContent
   liftIO $ do
-    when frontmatter $ TL.putStr $ B.toLazyText (makeFrontmatter (noteInfo ^. #fields))
+    when frontmatter $ TL.putStr $ B.toLazyText (makeFrontmatter (noteInfo ^. #properties))
     T.putStrLn content
