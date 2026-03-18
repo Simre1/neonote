@@ -9,7 +9,6 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
 import NeoNote.Data.Id
-import {-# SOURCE #-} NeoNote.Note.Syntax.Pattern (Pattern)
 import NeoNote.Time
 import Optics.Core (Lens', coerced, (%), (^.))
 
@@ -20,9 +19,6 @@ noteIdToText (NoteId uuid) = idToText uuid
 
 noteIdFromText :: Text -> Maybe NoteId
 noteIdFromText text = NoteId <$> parseId text
-
-newtype AutoProperties = AutoProperties [Pattern]
-  deriving (Semigroup, Monoid)
 
 data DateLiteral
   = DateLiteralCreated

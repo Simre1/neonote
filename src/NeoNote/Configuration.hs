@@ -14,9 +14,8 @@ import Effectful
 import Effectful.Dispatch.Dynamic (interpret)
 import Effectful.TH (makeEffect)
 import GHC.Generics (Generic)
-import NeoNote.Note.Note (AutoProperties (..), PropertyName)
+import NeoNote.Note.Note (PropertyName)
 import NeoNote.Note.Syntax.Common (makeFieldName)
-import NeoNote.Note.Syntax.Pattern
 import Optics.Core
 import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesFileExist, getXdgDirectory)
 import System.Environment (lookupEnv)

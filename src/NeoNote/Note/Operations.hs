@@ -6,7 +6,6 @@ import Data.Maybe
 import Data.Set qualified as S
 import Debug.Trace
 import NeoNote.Note.Note
-import NeoNote.Note.Syntax.Pattern
 import NeoNote.Note.Syntax.RawNote
 import NeoNote.Time
 import Optics.Core
@@ -53,16 +52,6 @@ updateNote autoProperties oldNote modificationTime newRawNote =
             then NoChanges
             else Update (updatedNote1, junkFields)
     else Delete
-
--- -- Check if new auto properties match
--- updatedNote2 = updateNote autoProperties updatedNote1 modificationTime (noteToRaw updatedNote1)
---       if oldNote ^. #content == noteContent && properties == oldNote ^. #info % #properties
---         then NoChanges
---         else case updatedNote2 of
---           Delete -> Delete
---           NoChanges -> Update (updatedNote1, junkFields)
---           Update (note, junkFields2) -> Update (note, junkFields ++ junkFields2)
--- else Delete
 
 updateContent :: AutoProperties -> Properties -> NoteContent -> NoteContent
 updateContent (AutoProperties patterns) deletedProperties (NoteContent noteContent) =

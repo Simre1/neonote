@@ -1,6 +1,6 @@
 cabal-version:      3.12
 name:               neonote
-version:            0.3.1.0
+version:            0.4.0.0
 -- synopsis:
 -- description:
 license:            GPL-3.0-or-later
@@ -62,7 +62,6 @@ library
         NeoNote.Note.Syntax.Common
         NeoNote.Note.Syntax.NoteFilter
         NeoNote.Note.Syntax.RawNote
-        NeoNote.Note.Syntax.Pattern
         NeoNote.Data.Id
         NeoNote.Store.Database
         NeoNote.Store.Database.Error

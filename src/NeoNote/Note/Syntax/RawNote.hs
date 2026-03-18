@@ -16,7 +16,6 @@ import Data.Text.Lazy.Builder qualified as B
 import Debug.Trace
 import NeoNote.Note.Note
 import NeoNote.Note.Syntax.Common
-import NeoNote.Note.Syntax.Pattern
 import Optics.Core
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P
